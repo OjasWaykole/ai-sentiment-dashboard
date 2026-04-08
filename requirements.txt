@@ -1,7 +1,8 @@
 streamlit
 pandas
-scikit-learn
 plotly
 wordcloud
 matplotlib
-seaborn
+scikit-learn
+transformers
+torch
