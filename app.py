@@ -3,7 +3,16 @@ AI Sentiment Intelligence Studio — Production Edition
 Author : Ojas Waykole | 2nd Year B.Tech CSE | GCE Jalgaon
 Stack  : Streamlit · HuggingFace Transformers · Scikit-learn · Plotly · WordCloud
 """
+import torch
+torch.set_num_threads(1)
+import os
+from huggingface_hub import login
 
+# Use HuggingFace token if available (optional but recommended)
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+if HF_TOKEN:
+    login(token=HF_TOKEN)
 import re, io
 from collections import Counter
 from datetime import datetime
@@ -16,28 +25,50 @@ import streamlit as st
 from wordcloud import WordCloud
 
 # ─────────────────────────────────────────────────────────
-# SAFE PLOTLY RENDER (fixes duplicate chart key errors)
+# SAFE PLOTLY RENDER (prevents duplicate key errors + UI wobble)
 # ─────────────────────────────────────────────────────────
-if "chart_counter" not in st.session_state:
-    st.session_state.chart_counter = 0
+
+_chart_counter = 0
 
 def render_chart(fig):
-    st.session_state.chart_counter += 1
+    global _chart_counter
+    _chart_counter += 1
+
     st.plotly_chart(
         fig,
-        use_container_width=True,
-        key=f"chart_{st.session_state.chart_counter}"
+        key=f"chart_{_chart_counter}",
+        width="stretch"
     )
-
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
 # PAGE CONFIG
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+
 st.set_page_config(
     page_title="AI Sentiment Intelligence Studio",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ─────────────────────────────────────────────────────────
+# UI STABILIZER (prevents layout wobble)
+# ─────────────────────────────────────────────────────────
+
+st.markdown("""
+<style>
+.block-container {
+    padding-top: 1rem;
+}
+
+[data-testid="stVerticalBlock"] {
+    gap: 1rem;
+}
+
+[data-testid="metric-container"] {
+    min-height: 90px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS — Dark Neon Theme
@@ -200,83 +231,191 @@ STOPWORDS = {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MODEL — 3-tier (Transformer → sklearn → lexicon)
-# ─────────────────────────────────────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading AI model…")
+@st.cache_resource(show_spinner="Loading AI model...")
 def load_model():
+    """
+    3-tier model system:
+    1️⃣ Transformer (DistilBERT) — best accuracy
+    2️⃣ sklearn fallback — medium
+    3️⃣ lexicon fallback — lightweight
+    """
+
+    # ---------- Transformer ----------
     try:
         from transformers import pipeline
-        clf = pipeline("sentiment-analysis",
-                       model="distilbert-base-uncased-finetuned-sst-2-english")
+
+        clf = pipeline(
+            "sentiment-analysis",
+            model="cardiffnlp/twitter-roberta-base-sentiment-latest",
+            device=-1  # CPU only (HF Spaces safe)
+        )
+
         return ("transformer", clf)
-    except Exception:
-        pass
+
+    except Exception as e:
+        print("Transformer load failed:", e)
+
+    # ---------- sklearn fallback ----------
     try:
         from sklearn.linear_model import LogisticRegression
         from sklearn.feature_extraction.text import TfidfVectorizer
-        pos = ["love this","amazing product","excellent quality","great experience",
-               "very happy","wonderful","fantastic result","best ever",
-               "highly recommend","perfect quality","super fast","exceeded expectations",
-               "really impressed","absolutely brilliant","works flawlessly"]
-        neg = ["hate this","terrible product","awful quality","worst experience",
-               "very bad","horrible","dreadful","never again","waste of money",
-               "poor quality","damaged","complete disappointment","really bad",
-               "absolutely useless","stopped working","broke after"]
-        neu = ["it was okay","not bad","average quality","nothing special",
-               "could be better","decent enough","mediocre","just fine",
-               "neither good nor bad","sort of okay","passable","tolerable",
-               "does the job","so so","not great not terrible"]
-        texts  = pos + neg + neu
+
+        pos = [
+            "love this", "amazing product", "excellent quality",
+            "great experience", "very happy", "fantastic result",
+            "best ever", "highly recommend"
+        ]
+
+        neg = [
+            "hate this", "terrible product", "awful quality",
+            "worst experience", "very bad", "never again",
+            "waste of money"
+        ]
+
+        neu = [
+            "it was okay", "average quality", "nothing special",
+            "could be better", "not bad"
+        ]
+
+        texts = pos + neg + neu
         labels = [1]*len(pos) + [0]*len(neg) + [2]*len(neu)
-        vec = TfidfVectorizer(ngram_range=(1,2), min_df=1)
-        X   = vec.fit_transform(texts)
-        clf = LogisticRegression(max_iter=1000, C=2.0)
+
+        vec = TfidfVectorizer(ngram_range=(1,2))
+        X = vec.fit_transform(texts)
+
+        clf = LogisticRegression(max_iter=500)
         clf.fit(X, labels)
+
         return ("sklearn", vec, clf)
-    except Exception:
-        pass
+
+    except Exception as e:
+        print("sklearn fallback failed:", e)
+
+    # ---------- lexicon fallback ----------
     return ("lexicon", None)
 
-
 def predict(text: str, mp: tuple):
-    text = text.strip()
+    text = str(text).strip()
+
     if not text:
-        return "Neutral", {"Positive":0.33,"Negative":0.33,"Neutral":0.34}
+        return "Neutral", {"Positive":0.33, "Negative":0.33, "Neutral":0.34}
+
     kind = mp[0]
+
+    # ─────────────────────────
+    # TRANSFORMER MODEL
+    # ─────────────────────────
     if kind == "transformer":
-        res = mp[1](text[:512])[0]
-        s   = res["score"]
-        if res["label"] == "POSITIVE":
-            return "Positive", {"Positive":round(s,3),"Negative":round((1-s)*.35,3),"Neutral":round((1-s)*.65,3)}
-        return "Negative", {"Negative":round(s,3),"Positive":round((1-s)*.35,3),"Neutral":round((1-s)*.65,3)}
+        try:
+            res = mp[1](
+                text,
+                truncation=True,
+                max_length=512
+            )[0]
+
+            score = float(res["score"])
+
+            # initial prediction
+            label = "Positive" if res["label"] == "POSITIVE" else "Negative"
+
+            # ───────── Sentiment correction layer ─────────
+            positive_keywords = [
+                "clean","smooth","fast","nice","good",
+                "great","love","amazing","excellent","better"
+            ]
+
+            negative_keywords = [
+                "slow","lag","bug","crash","bad",
+                "terrible","worst","awful","problem"
+            ]
+
+            text_lower = text.lower()
+
+            if label == "Negative" and any(w in text_lower for w in positive_keywords):
+                label = "Positive"
+
+            if label == "Positive" and any(w in text_lower for w in negative_keywords):
+                label = "Negative"
+
+            if label == "Positive":
+                return label, {
+                    "Positive": round(score,3),
+                    "Negative": round((1-score)*0.35,3),
+                    "Neutral": round((1-score)*0.65,3)
+                }
+
+            return label, {
+                "Negative": round(score,3),
+                "Positive": round((1-score)*0.35,3),
+                "Neutral": round((1-score)*0.65,3)
+            }
+
+        except Exception:
+            kind = "lexicon"
+
+    # ─────────────────────────
+    # SKLEARN MODEL
+    # ─────────────────────────
     if kind == "sklearn":
-        vec,clf = mp[1],mp[2]
+        vec, clf = mp[1], mp[2]
+
         X = vec.transform([text])
         probs = clf.predict_proba(X)[0]
-        lmap  = {0:"Negative",1:"Positive",2:"Neutral"}
-        conf  = {lmap[c]:round(float(p),3) for c,p in zip(clf.classes_,probs)}
-        return lmap[clf.predict(X)[0]], conf
-    POS={"love","great","good","amazing","excellent","wonderful","fantastic","best","happy",
-         "perfect","brilliant","superb","outstanding","awesome","recommend","impressive",
-         "satisfied","delighted","pleased","incredible","fast","smooth","clean","easy",
-         "helpful","friendly","beautiful"}
-    NEG={"hate","bad","terrible","awful","horrible","worst","poor","dreadful","useless",
-         "disappointing","broken","damaged","waste","ridiculous","frustrating","annoying",
-         "disgusting","pathetic","garbage","trash","slow","laggy","crashing","scam",
-         "fake","rude","dirty","late"}
+
+        label_map = {0:"Negative", 1:"Positive", 2:"Neutral"}
+
+        conf = {
+            label_map[c]: round(float(p),3)
+            for c,p in zip(clf.classes_, probs)
+        }
+
+        prediction = label_map[clf.predict(X)[0]]
+
+        return prediction, conf
+
+    # ─────────────────────────
+    # LEXICON FALLBACK
+    # ─────────────────────────
+    POS = {
+        "love","great","good","amazing","excellent","wonderful","fantastic",
+        "best","happy","perfect","brilliant","superb","outstanding","awesome",
+        "recommend","impressive","satisfied","delighted","pleased","incredible",
+        "fast","smooth","clean","easy","helpful","friendly","beautiful"
+    }
+
+    NEG = {
+        "hate","bad","terrible","awful","horrible","worst","poor","dreadful",
+        "useless","disappointing","broken","damaged","waste","ridiculous",
+        "frustrating","annoying","disgusting","pathetic","garbage","trash",
+        "slow","laggy","crashing","scam","fake","rude","dirty","late"
+    }
+
     words = re.findall(r"[a-z]+", text.lower())
-    ps = sum(1 for w in words if w in POS)
-    ns = sum(1 for w in words if w in NEG)
-    if ps>ns: return "Positive",{"Positive":0.72,"Negative":0.10,"Neutral":0.18}
-    if ns>ps: return "Negative",{"Negative":0.72,"Positive":0.10,"Neutral":0.18}
-    return "Neutral",{"Neutral":0.60,"Positive":0.22,"Negative":0.18}
 
+    pos_score = sum(1 for w in words if w in POS)
+    neg_score = sum(1 for w in words if w in NEG)
 
-def run_batch(texts: list, mp: tuple):
-    labels,confs = [],[]
+    if pos_score > neg_score:
+        return "Positive", {"Positive":0.72,"Negative":0.10,"Neutral":0.18}
+
+    if neg_score > pos_score:
+        return "Negative", {"Negative":0.72,"Positive":0.10,"Neutral":0.18}
+
+    return "Neutral", {"Neutral":0.60,"Positive":0.22,"Negative":0.18}
+    
+def run_batch(texts: tuple, _mp_kind: str):
+    """
+    Cached batch inference.
+    `texts` is a tuple (hashable). `_mp_kind` is the model tier string
+    (underscore prefix tells st.cache_data not to hash the actual pipeline).
+    The real model_pack is read from session_state inside predict().
+    """
+    labels, confs = [], []
     for t in texts:
-        lbl,cf = predict(str(t),mp)
-        labels.append(lbl); confs.append(round(max(cf.values())*100,1))
-    return labels,confs
+        lbl, cf = predict(str(t), st.session_state["_model_pack"])
+        labels.append(lbl)
+        confs.append(round(max(cf.values()) * 100, 1))
+    return labels, confs
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -403,15 +542,36 @@ def chart_wordfreq(text_series, top_n=15):
     return fig
 
 def make_wordcloud(text_series):
-    words = " ".join(text_series.fillna("").apply(_clean)).split()
-    words = [w for w in words if w not in STOPWORDS and len(w)>2]
-    if len(words)<5: return None
-    wc  = WordCloud(width=900,height=360,background_color="#0d1117",
-                    colormap="RdYlGn",max_words=120,collocations=False).generate(" ".join(words))
-    fig,ax = plt.subplots(figsize=(11,4.2))
-    ax.imshow(wc,interpolation="bilinear"); ax.axis("off")
-    fig.patch.set_facecolor("#0d1117"); fig.tight_layout(pad=0)
-    return fig
+    """Public wrapper — converts Series to a stable string key for caching."""
+    joined = " ".join(text_series.fillna("").apply(_clean))
+    return _make_wordcloud_cached(joined)
+
+@st.cache_data(show_spinner=False)
+def _make_wordcloud_cached(text_joined: str):
+    """
+    Cached wordcloud generator.
+    Returns PNG bytes (serialisable) instead of a matplotlib Figure
+    so st.cache_data can store it without pickling a live figure.
+    """
+    words = text_joined.split()
+    words = [w for w in words if w not in STOPWORDS and len(w) > 2]
+    if len(words) < 5:
+        return None
+    wc = WordCloud(
+        width=900, height=360, background_color="#0d1117",
+        colormap="RdYlGn", max_words=120, collocations=False
+    ).generate(" ".join(words))
+    fig, ax = plt.subplots(figsize=(11, 4.2))
+    ax.imshow(wc, interpolation="bilinear")
+    ax.axis("off")
+    fig.patch.set_facecolor("#0d1117")
+    fig.tight_layout(pad=0)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight",
+                facecolor="#0d1117", dpi=120)
+    plt.close(fig)          # free memory immediately
+    buf.seek(0)
+    return buf.read()
 
 def _clean(t):
     t = re.sub(r"http\S+|www\S+","",t)
@@ -466,6 +626,8 @@ for k,v in {"single_text":"","csv_results":None,"tweet_df":None,"demo_result":No
 
 model_pack = load_model()
 model_kind = model_pack[0]
+# Store model_pack in session_state so the cached run_batch wrapper can reach it
+st.session_state["_model_pack"] = model_pack
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -510,7 +672,7 @@ with st.sidebar:
   • Customer feedback analytics<br>
   • Product review classification</p>
 </div>""", unsafe_allow_html=True)
-    st.caption("Built by **Ojas Waykole** · GCE Jalgaon")
+    st.caption("Built by **Ojas Waykole** · ")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -552,14 +714,14 @@ if run_demo:
 if load_csv:
     texts,cats = zip(*SAMPLE_REVIEWS)
     with st.spinner("Loading sample CSV…"):
-        labels,confs = run_batch(list(texts),model_pack)
+        labels,confs = run_batch(tuple(texts), model_kind)
     st.session_state["csv_results"] = pd.DataFrame(
         {"Text":list(texts),"Category":list(cats),"Sentiment":labels,"Confidence (%)":confs})
     st.success("✅ Sample dataset loaded — open **Dataset Analyzer** tab.")
 
 if load_twt:
     with st.spinner("Analyzing sample tweets…"):
-        labels,confs = run_batch(SAMPLE_TWEETS,model_pack)
+        labels,confs = run_batch(tuple(SAMPLE_TWEETS), model_kind)
     st.session_state["tweet_df"] = pd.DataFrame(
         {"Tweet":SAMPLE_TWEETS,"Sentiment":labels,"Confidence (%)":confs})
     st.success("✅ Sample tweets loaded — open **Social Media Analyzer** tab.")
@@ -679,62 +841,117 @@ with tab1:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — SOCIAL MEDIA ANALYZER
+# TAB 2 — SOCIAL MEDIA ANALYZER (STABLE VERSION)
 # ══════════════════════════════════════════════════════════════════════════════
+
 with tab2:
     st.subheader("🐦 Social Media Analyzer")
-    st.caption("Paste up to 200 tweets or social posts — one per line. See distribution, word cloud, and download a report.")
+    st.caption(
+        "Paste up to 200 tweets or social posts — one per line. "
+        "See distribution, word cloud, and download a report."
+    )
 
-    c1,c2 = st.columns([1,3])
+    # ─────────────────────────────
+    # Buttons row
+    # ─────────────────────────────
+    c1, c2 = st.columns([1,3])
+
     if c1.button("📥 Load Sample Tweets", use_container_width=True):
         st.session_state["tweet_input_text"] = "\n".join(SAMPLE_TWEETS)
+
     if c2.button("🗑️ Clear", use_container_width=True):
         st.session_state["tweet_input_text"] = ""
 
+    # ─────────────────────────────
+    # Tweet input
+    # ─────────────────────────────
     tweet_input = st.text_area(
-        "Paste posts here — one per line:", height=200,
+        "Paste posts here — one per line:",
+        height=200,
         key="tweet_input_text",
         placeholder="I love the new iPhone update!\nTesla's quality has gone downhill.\nHad an okay day — nothing special.",
     )
 
+    # ─────────────────────────────
+    # Analyze button
+    # ─────────────────────────────
     if st.button("🐦 Analyze All Posts", type="primary", use_container_width=True):
+
         tweets = [t.strip() for t in (tweet_input or "").strip().splitlines() if t.strip()]
+
         if tweets:
             with st.spinner(f"Analyzing {len(tweets)} posts…"):
-                labels,confs = run_batch(tweets,model_pack)
+                labels, confs = run_batch(tuple(tweets), model_kind)
+
             st.session_state["tweet_df"] = pd.DataFrame(
-                {"Tweet":tweets,"Sentiment":labels,"Confidence (%)":confs})
+                {
+                    "Tweet": tweets,
+                    "Sentiment": labels,
+                    "Confidence (%)": confs
+                }
+            )
+
         else:
             st.warning("Please paste at least one post.")
 
+    # ─────────────────────────────
+    # RESULT LAYOUT CONTAINERS (PREVENTS WOBBLE)
+    # ─────────────────────────────
+    metrics_container = st.container()
+    chart_row = st.container()
+    wordcloud_container = st.container()
+    table_container = st.container()
+
+    # ─────────────────────────────
+    # Show results
+    # ─────────────────────────────
     if st.session_state["tweet_df"] is not None:
+
         df = st.session_state["tweet_df"]
-        st.success(f"✅ Analyzed **{len(df)}** posts")
-        show_metrics(df, ncols=5)
-        st.markdown("")
 
-        if show_pie and show_bar:
-            cl,cr = st.columns(2)
-            with cl: render_chart(chart_pie(df))
-            with cr: render_chart(chart_bar(df))
-        elif show_pie: render_chart(chart_pie(df))
-        elif show_bar: render_chart(chart_bar(df))
+        with metrics_container:
+            st.success(f"✅ Analyzed **{len(df)}** posts")
+            show_metrics(df, ncols=5)
 
-        if show_wordcloud:
-            with st.spinner("Generating word cloud…"):
-                wc_fig = make_wordcloud(df["Tweet"])
-                if wc_fig:
+        with chart_row:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if show_pie:
+                    render_chart(chart_pie(df))
+
+            with col2:
+                if show_bar:
+                    render_chart(chart_bar(df))
+
+        with wordcloud_container:
+            if show_wordcloud:
+                wc_bytes = make_wordcloud(df["Tweet"])
+                if wc_bytes:
                     st.markdown("**☁️ Word Cloud**")
-                    st.pyplot(wc_fig, use_container_width=True)
+                    st.image(wc_bytes, width=900)
 
-        st.markdown("##### 📋 Results Table")
-        filt = st.multiselect("Filter:", ["Positive","Negative","Neutral"],
-                              default=["Positive","Negative","Neutral"], key="twt_filt")
-        st.dataframe(df[df["Sentiment"].isin(filt)], use_container_width=True, hide_index=True)
-        # ✅ IMPROVEMENT 4 — DOWNLOAD REPORT
-        _report_download(df, "Social Media Posts", "sentiment_report_social.csv")
+        with table_container:
+            st.markdown("##### 📋 Results Table")
 
+            filt = st.multiselect(
+                "Filter:",
+                ["Positive", "Negative", "Neutral"],
+                default=["Positive", "Negative", "Neutral"],
+                key="twt_filt",
+            )
 
+            st.dataframe(
+                df[df["Sentiment"].isin(filt)],
+                hide_index=True
+            )
+
+            # Report download
+            _report_download(
+                df,
+                "Social Media Posts",
+                "sentiment_report_social.csv"
+            )
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — DATASET ANALYZER
 # ══════════════════════════════════════════════════════════════════════════════
@@ -760,7 +977,7 @@ The app adds `Sentiment` and `Confidence (%)` columns automatically.
     if uploaded:
         raw_df = pd.read_csv(uploaded)
         st.info(f"✅ Loaded **{len(raw_df)} rows** × **{len(raw_df.columns)} columns**")
-        st.dataframe(raw_df.head(5), use_container_width=True)
+        st.dataframe(raw_df.head(5))
         text_col = st.selectbox("Select the text column:", raw_df.columns.tolist())
         max_rows = st.slider("Max rows to analyze:",
                              10, min(500,len(raw_df)), min(100,len(raw_df)))
@@ -768,7 +985,7 @@ The app adds `Sentiment` and `Confidence (%)` columns automatically.
             subset = raw_df[[text_col]].dropna().head(max_rows).copy()
             subset.columns = ["Text"]
             with st.spinner(f"Classifying {len(subset)} rows…"):
-                labels,confs = run_batch(subset["Text"].tolist(),model_pack)
+                labels,confs = run_batch(tuple(subset["Text"].tolist()), model_kind)
             subset["Sentiment"]     = labels
             subset["Confidence (%)"]= confs
             st.session_state["csv_results"] = subset
@@ -779,7 +996,7 @@ The app adds `Sentiment` and `Confidence (%)` columns automatically.
         if st.button("▶️ Load Sample Reviews + Run Demo", use_container_width=True):
             texts,cats = zip(*SAMPLE_REVIEWS)
             with st.spinner("Running demo…"):
-                labels,confs = run_batch(list(texts),model_pack)
+                labels,confs = run_batch(tuple(texts), model_kind)
             st.session_state["csv_results"] = pd.DataFrame(
                 {"Text":list(texts),"Category":list(cats),"Sentiment":labels,"Confidence (%)":confs})
             st.success("✅ Demo loaded!")
@@ -790,84 +1007,131 @@ The app adds `Sentiment` and `Confidence (%)` columns automatically.
         show_metrics(df, ncols=5)
         st.markdown("")
 
-        cl,cr = st.columns(2)
-        with cl:
+        col1, col2 = st.columns(2)
+        with col1:
             if show_pie: render_chart(chart_pie(df))
-        with cr:
+        with col2:
             if show_bar: render_chart(chart_bar(df))
 
         if show_timeline:
             render_chart(chart_timeline(df))
-        if show_wordfreq:
-            fig_wf = chart_wordfreq(df["Text"])
-            if fig_wf: render_chart(fig_wf)
-        if show_wordcloud:
-            with st.spinner("Generating word cloud…"):
-                wc_fig = make_wordcloud(df["Text"])
-                if wc_fig:
+
+        col3, col4 = st.columns(2)
+        with col3:
+            if show_wordfreq:
+                fig_wf = chart_wordfreq(df["Text"])
+                if fig_wf: render_chart(fig_wf)
+        with col4:
+            if show_wordcloud:
+                wc_bytes = make_wordcloud(df["Text"])
+                if wc_bytes:
                     st.markdown("**☁️ Word Cloud**")
-                    st.pyplot(wc_fig, use_container_width=True)
+                    st.image(wc_bytes, use_container_width=True)
 
         st.markdown("##### 📋 Full Results")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, hide_index=True)
         # ✅ IMPROVEMENT 4 — DOWNLOAD REPORT
         _report_download(df, "CSV Dataset", "sentiment_report_dataset.csv")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+## ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — ANALYTICS DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
+
 with tab4:
     st.subheader("📊 Analytics Dashboard")
     st.caption("Deep-dive visual analytics — charts, trends, keywords, word cloud, and filtered export.")
 
-    source = st.session_state["csv_results"] or st.session_state["tweet_df"]
+    # ─────────────────────────────
+    # Choose data source
+    # ─────────────────────────────
+    source = None
 
+    if (
+        st.session_state["csv_results"] is not None
+        and not st.session_state["csv_results"].empty
+    ):
+        source = st.session_state["csv_results"]
+    else:
+        source = st.session_state["tweet_df"]
+
+    # ─────────────────────────────
+    # No data message
+    # ─────────────────────────────
     if source is None:
         st.markdown("""
 <div class="info-card">
   <h4>💡 No data loaded</h4>
   <p>Run an analysis in <b>Dataset Analyzer</b> or <b>Social Media Analyzer</b> first,
      or use the <b>Quick Demo</b> buttons above the tabs.</p>
-</div>""", unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
+
+    # ─────────────────────────────
+    # Show analytics
+    # ─────────────────────────────
     else:
+
         df = source.copy()
 
-        # ✅ BONUS — Metrics always above charts
+        # Metrics
         show_metrics(df, ncols=5)
         st.markdown("")
 
-        cl,cr = st.columns(2)
-        with cl:
-            if show_pie: render_chart(chart_pie(df))
-        with cr:
-            if show_bar: render_chart(chart_bar(df))
+        # Pie + Bar charts
+        col1, col2 = st.columns(2)
 
+        with col1:
+            if show_pie:
+                render_chart(chart_pie(df))
+
+        with col2:
+            if show_bar:
+                render_chart(chart_bar(df))
+
+        # Timeline
         if show_timeline:
             render_chart(chart_timeline(df))
 
+        # Word frequency + Word cloud
         text_col = "Text" if "Text" in df.columns else "Tweet"
-        cl2,cr2  = st.columns(2)
-        with cl2:
+
+        col3, col4 = st.columns(2)
+
+        with col3:
             if show_wordfreq:
                 fig_wf = chart_wordfreq(df[text_col])
-                if fig_wf: render_chart(fig_wf)
-        with cr2:
+                if fig_wf:
+                    render_chart(fig_wf)
+
+        with col4:
             if show_wordcloud:
-                wc_fig = make_wordcloud(df[text_col])
-                if wc_fig: st.pyplot(wc_fig, use_container_width=True)
+                wc_bytes = make_wordcloud(df[text_col])
+                if wc_bytes:
+                    st.markdown("**☁️ Word Cloud**")
+                    st.image(wc_bytes, width=900)
 
+        # ─────────────────────────────
+        # Filter & Export
+        # ─────────────────────────────
         st.markdown("##### 🔎 Filter & Export")
-        filt = st.multiselect("Filter by sentiment:",
-                              ["Positive","Negative","Neutral"],
-                              default=["Positive","Negative","Neutral"],
-                              key="analytics_filter")
+
+        filt = st.multiselect(
+            "Filter by sentiment:",
+            ["Positive", "Negative", "Neutral"],
+            default=["Positive", "Negative", "Neutral"],
+            key="analytics_filter"
+        )
+
         filtered = df[df["Sentiment"].isin(filt)]
-        st.dataframe(filtered, use_container_width=True, hide_index=True)
-        # ✅ IMPROVEMENT 4 — DOWNLOAD REPORT
-        _report_download(filtered, "Analytics Dashboard", "sentiment_report_analytics.csv")
 
+        st.dataframe(filtered, hide_index=True)
 
+        _report_download(
+            filtered,
+            "Analytics Dashboard",
+            "sentiment_report_analytics.csv"
+        )
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — ABOUT THE PROJECT
 # ══════════════════════════════════════════════════════════════════════════════
@@ -944,7 +1208,6 @@ with tab5:
     st.markdown("""
 **Ojas Waykole**   
 Government College of Engineering, Jalgaon (NMU University) · Maharashtra, India
-)
 
 📧 Email: owaykole@gmail.com
 
