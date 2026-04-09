@@ -1,77 +1,105 @@
+---
+title: AI Sentiment Intelligence Studio
+emoji: 🧠
+colorFrom: blue
+colorTo: purple
+sdk: streamlit
+python_version: "3.10"
+app_file: app.py
+pinned: false
+---
+
 # 🧠 AI Sentiment Intelligence Studio
 
-> Production-grade NLP sentiment analysis platform — text, social media, and datasets using HuggingFace Transformers.
+> Production-grade NLP sentiment analysis platform — analyze text, social media posts, and datasets using HuggingFace Transformers.
 
-🔗 **Live Demo** → [huggingface.co/spaces/OjasWaykole/ai-sentiment-dashboard](https://huggingface.co/spaces/OjasWaykole/ai-sentiment-dashboard)
+🔗 **Live Demo**
+https://huggingface.co/spaces/OjasWaykole/ai-sentiment-dashboard
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| ⚡ **Quick Demo** | One-click demo in the hero strip — no typing needed |
-| 🔍 **Text Analysis** | Classify any sentence with confidence score + aspect breakdown |
-| 🐦 **Social Media Analyzer** | Paste up to 200 tweets — distribution charts, word cloud, report |
-| 📂 **Dataset Analyzer** | Upload CSV → pick text column → classify every row automatically |
-| 📊 **Analytics Dashboard** | Pie chart, bar chart, sentiment timeline, word frequency, word cloud |
-| 🎯 **Aspect-Based Sentiment** | Identifies sentiment per dimension: Battery · Camera · Price · Support etc. |
-| 📄 **Download Report** | Executive summary (count, %, avg confidence) + full results in one CSV |
+| Feature                  | Description                                              |
+| ------------------------ | -------------------------------------------------------- |
+| ⚡ Quick Demo             | One-click demo to instantly test sentiment analysis      |
+| 🔍 Text Analysis         | Classify any sentence or paragraph with confidence score |
+| 🐦 Social Media Analyzer | Paste tweets and analyze sentiment distribution          |
+| 📂 Dataset Analyzer      | Upload CSV datasets and classify each row automatically  |
+| 📊 Analytics Dashboard   | Pie chart, bar chart, sentiment timeline                 |
+| ☁️ Word Cloud            | Visualize most common keywords                           |
+| 📄 Download Report       | Export sentiment results as CSV                          |
 
 ---
 
-## 🛠️ Tech Stack
+## 🤖 Model
 
-| Layer | Technology |
-|---|---|
-| NLP Model | HuggingFace Transformers — DistilBERT-SST2 |
-| Fallback ML | Scikit-learn — Logistic Regression + TF-IDF |
-| Web App | Streamlit |
-| Charts | Plotly Express + Plotly Graph Objects |
-| Word Cloud | WordCloud + Matplotlib |
-| Data | Pandas + NumPy |
-| Deployment | HuggingFace Spaces |
+**Primary Model**
+
+DistilBERT
+`distilbert-base-uncased-finetuned-sst-2-english`
+
+* ~91% accuracy
+* trained on Stanford SST-2 dataset
+* optimized transformer inference
+
+**Fallback Model**
+
+* Logistic Regression
+* TF-IDF Vectorizer
+* Scikit-learn implementation
 
 ---
 
-## 🤖 Model Details
+## 🛠 Tech Stack
 
-**Primary — DistilBERT** (`distilbert-base-uncased-finetuned-sst-2-english`)
-- Fine-tuned on Stanford Sentiment Treebank v2 (SST-2)
-- ~91% accuracy · 60% faster than BERT · 40% fewer parameters
-
-**Fallback — Logistic Regression + TF-IDF bigrams**
-- 3-class: Positive / Negative / Neutral
-- Activates automatically when transformers are unavailable
+| Layer       | Technology               |
+| ----------- | ------------------------ |
+| NLP Model   | HuggingFace Transformers |
+| ML Fallback | Scikit-learn             |
+| Web App     | Streamlit                |
+| Charts      | Plotly                   |
+| Word Cloud  | WordCloud                |
+| Data        | Pandas + NumPy           |
+| Deployment  | HuggingFace Spaces       |
 
 ---
 
 ## 🚀 Run Locally
 
-```bash
+Clone repository
+
+```
 git clone https://github.com/OjasWaykole/ai-sentiment-dashboard
 cd ai-sentiment-dashboard
+```
+
+Install dependencies
+
+```
 pip install -r requirements.txt
+```
+
+Run the app
+
+```
 streamlit run app.py
 ```
 
----
-
-## 📄 CV Entry
+Open browser
 
 ```
-AI Sentiment Intelligence Dashboard                              [Live Demo ↗]
-• Built production-grade NLP sentiment platform using Python and ML
-• Implemented DistilBERT transformer (HuggingFace) with sklearn fallback
-• Developed Streamlit web app with 4 analysis modes + aspect-based sentiment
-• Integrated charts, word cloud, sentiment timeline, and downloadable reports
-• Deployed publicly on HuggingFace Spaces — instantly testable by recruiters
-Tech: Python · HuggingFace Transformers · Streamlit · Plotly · Scikit-learn · Pandas
+http://localhost:8501
 ```
 
 ---
 
 ## 👨‍💻 Author
 
-**Ojas Waykole** — 2nd Year B.Tech CSE, GCE Jalgaon (NMU University)  
-💼 Open to AI/ML & NLP Internship Opportunities · May–December
+**Ojas Waykole**
+B.Tech Computer Science
+Government College of Engineering, Jalgaon (NMU University)
+
+📧 **Email:** [owaykole@gmail.com](mailto:owaykole@gmail.com)
+
+💼 Open to **AI / ML / NLP Internship Opportunities**
