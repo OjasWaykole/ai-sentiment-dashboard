@@ -15,6 +15,20 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from wordcloud import WordCloud
 
+# ─────────────────────────────────────────────────────────
+# SAFE PLOTLY RENDER (fixes duplicate chart key errors)
+# ─────────────────────────────────────────────────────────
+if "chart_counter" not in st.session_state:
+    st.session_state.chart_counter = 0
+
+def render_chart(fig):
+    st.session_state.chart_counter += 1
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"chart_{st.session_state.chart_counter}"
+    )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
@@ -561,7 +575,7 @@ if st.session_state["demo_result"]:
      &nbsp;·&nbsp; Model: <b>{model_kind}</b></p>
 </div>""", unsafe_allow_html=True)
     if show_conf:
-        st.plotly_chart(chart_confidence(cf), use_container_width=True)
+        render_chart(chart_confidence(cf))
 
 st.markdown("---")
 
@@ -641,7 +655,7 @@ with tab1:
      &nbsp;·&nbsp; Characters: <b>{len(user_text)}</b></p>
 </div>""", unsafe_allow_html=True)
             if show_conf:
-                st.plotly_chart(chart_confidence(conf), use_container_width=True)
+                render_chart(chart_confidence(conf))
             if show_aspect:
                 aspects = aspect_sentiment(user_text, model_pack)
                 if aspects:
@@ -701,10 +715,10 @@ with tab2:
 
         if show_pie and show_bar:
             cl,cr = st.columns(2)
-            with cl: st.plotly_chart(chart_pie(df), use_container_width=True)
-            with cr: st.plotly_chart(chart_bar(df), use_container_width=True)
-        elif show_pie: st.plotly_chart(chart_pie(df), use_container_width=True)
-        elif show_bar: st.plotly_chart(chart_bar(df), use_container_width=True)
+            with cl: render_chart(chart_pie(df))
+            with cr: render_chart(chart_bar(df))
+        elif show_pie: render_chart(chart_pie(df))
+        elif show_bar: render_chart(chart_bar(df))
 
         if show_wordcloud:
             with st.spinner("Generating word cloud…"):
@@ -778,15 +792,15 @@ The app adds `Sentiment` and `Confidence (%)` columns automatically.
 
         cl,cr = st.columns(2)
         with cl:
-            if show_pie: st.plotly_chart(chart_pie(df), use_container_width=True)
+            if show_pie: render_chart(chart_pie(df))
         with cr:
-            if show_bar: st.plotly_chart(chart_bar(df), use_container_width=True)
+            if show_bar: render_chart(chart_bar(df))
 
         if show_timeline:
-            st.plotly_chart(chart_timeline(df), use_container_width=True)
+            render_chart(chart_timeline(df))
         if show_wordfreq:
             fig_wf = chart_wordfreq(df["Text"])
-            if fig_wf: st.plotly_chart(fig_wf, use_container_width=True)
+            if fig_wf: render_chart(fig_wf)
         if show_wordcloud:
             with st.spinner("Generating word cloud…"):
                 wc_fig = make_wordcloud(df["Text"])
@@ -825,19 +839,19 @@ with tab4:
 
         cl,cr = st.columns(2)
         with cl:
-            if show_pie: st.plotly_chart(chart_pie(df), use_container_width=True)
+            if show_pie: render_chart(chart_pie(df))
         with cr:
-            if show_bar: st.plotly_chart(chart_bar(df), use_container_width=True)
+            if show_bar: render_chart(chart_bar(df))
 
         if show_timeline:
-            st.plotly_chart(chart_timeline(df), use_container_width=True)
+            render_chart(chart_timeline(df))
 
         text_col = "Text" if "Text" in df.columns else "Tweet"
         cl2,cr2  = st.columns(2)
         with cl2:
             if show_wordfreq:
                 fig_wf = chart_wordfreq(df[text_col])
-                if fig_wf: st.plotly_chart(fig_wf, use_container_width=True)
+                if fig_wf: render_chart(fig_wf)
         with cr2:
             if show_wordcloud:
                 wc_fig = make_wordcloud(df[text_col])
@@ -928,8 +942,11 @@ with tab5:
     st.markdown("---")
     st.markdown("### 👨‍💻 Author")
     st.markdown("""
-**Ojas Waykole** — 2nd Year B.Tech CSE  
+**Ojas Waykole**   
 Government College of Engineering, Jalgaon (NMU University) · Maharashtra, India
+)
+
+📧 Email: owaykole@gmail.com
 
 🔗 [HuggingFace Space](https://huggingface.co/spaces/OjasWaykole/ai-sentiment-dashboard)  
 💼 Open to **AI/ML & NLP Internship Opportunities** · May–December
