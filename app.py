@@ -1,647 +1,936 @@
-import streamlit as st
+"""
+AI Sentiment Intelligence Studio — Production Edition
+Author : Ojas Waykole | 2nd Year B.Tech CSE | GCE Jalgaon
+Stack  : Streamlit · HuggingFace Transformers · Scikit-learn · Plotly · WordCloud
+"""
+
+import re, io
+from collections import Counter
+from datetime import datetime
+
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-from collections import Counter
-import re, io, base64, time, random
+import streamlit as st
+from wordcloud import WordCloud
 
-# ─── Page config ────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="AI Sentiment Intelligence Studio",
-    page_icon="🤖",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ─── Theme / CSS ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# CSS — Dark Neon Theme
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .block-container { padding-top: 1rem; }
-    .hero-box {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        border-radius: 16px;
-        padding: 2rem 2.5rem;
-        margin-bottom: 1.5rem;
-        border: 1px solid #e94560;
-    }
-    .hero-box h1 { color: #e94560; font-size: 2.2rem; margin-bottom: 0.3rem; }
-    .hero-box p  { color: #a0aec0; font-size: 1rem; }
-    .metric-card {
-        background: #1a1a2e;
-        border: 1px solid #2d3748;
-        border-radius: 12px;
-        padding: 1rem;
-        text-align: center;
-    }
-    .tag-pos { background:#1a4731; color:#68d391; padding:4px 12px; border-radius:20px; font-weight:600; }
-    .tag-neg { background:#4a1c1c; color:#fc8181; padding:4px 12px; border-radius:20px; font-weight:600; }
-    .tag-neu { background:#2d3748; color:#a0aec0; padding:4px 12px; border-radius:20px; font-weight:600; }
-    .example-btn { cursor:pointer; }
-    div[data-testid="stDownloadButton"] button {
-        background: #e94560; color: white; border: none; border-radius: 8px;
-    }
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+  .block-container { padding-top: 1rem; padding-bottom: 2rem; }
+
+  .hero-wrap {
+    background: linear-gradient(135deg,#0d0d1a 0%,#111128 40%,#0a1628 100%);
+    border:1px solid #e94560; border-radius:18px;
+    padding:2.2rem 2.8rem 2rem; margin-bottom:1rem;
+    position:relative; overflow:hidden;
+  }
+  .hero-wrap::before {
+    content:''; position:absolute; top:-60px; right:-60px;
+    width:260px; height:260px;
+    background:radial-gradient(circle,rgba(233,69,96,.18) 0%,transparent 70%);
+  }
+  .hero-title {
+    font-family:'Space Mono',monospace;
+    font-size:2rem; font-weight:700; color:#e94560;
+    margin:0 0 .4rem; letter-spacing:-.5px;
+  }
+  .hero-sub  { color:#8892a4; font-size:.95rem; margin:0 0 1rem; }
+  .hero-badges span {
+    display:inline-block; margin:.3rem .5rem 0 0;
+    padding:4px 13px; border-radius:20px; font-size:.78rem; font-weight:500;
+  }
+  .b-red   {background:#2b0d15;color:#e94560;border:1px solid #e94560;}
+  .b-blue  {background:#0d1c2b;color:#60a5fa;border:1px solid #60a5fa;}
+  .b-green {background:#0d2018;color:#4ade80;border:1px solid #4ade80;}
+  .b-gold  {background:#1f1a0d;color:#fbbf24;border:1px solid #fbbf24;}
+  .b-purple{background:#1a0d2b;color:#c084fc;border:1px solid #c084fc;}
+
+  .tag-pos{background:#0d2018;color:#4ade80;padding:6px 16px;border-radius:20px;font-weight:700;border:1px solid #4ade80;font-size:1.05rem;}
+  .tag-neg{background:#2b0d15;color:#f87171;padding:6px 16px;border-radius:20px;font-weight:700;border:1px solid #f87171;font-size:1.05rem;}
+  .tag-neu{background:#1a1f2e;color:#94a3b8;padding:6px 16px;border-radius:20px;font-weight:700;border:1px solid #475569;font-size:1.05rem;}
+
+  .result-card{background:#0d1117;border:1px solid #1e293b;border-radius:14px;padding:1.4rem 1.6rem;margin-top:1rem;}
+  .result-card h3{color:#94a3b8;font-size:.75rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem;}
+  .conf-note{color:#475569;font-size:.85rem;margin-top:.7rem;}
+  .conf-note b{color:#cbd5e1;}
+
+  .model-card{background:linear-gradient(135deg,#0a0f1a,#0d1628);border:1px solid #1e3a5f;border-radius:14px;padding:1.2rem 1.5rem;margin-top:.8rem;}
+  .model-card h4{color:#60a5fa;margin:0 0 .8rem;font-size:.95rem;font-weight:700;}
+  .model-row{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid #1e293b;font-size:.83rem;}
+  .model-row:last-child{border-bottom:none;}
+  .model-row .mk{color:#64748b;} .model-row .mv{color:#e2e8f0;font-weight:500;}
+
+  .aspect-wrap{background:#0d1117;border:1px solid #1e293b;border-radius:14px;padding:1.3rem 1.5rem;margin-top:1rem;}
+  .aspect-wrap h3{color:#94a3b8;font-size:.75rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:1rem;}
+  .aspect-row{display:flex;align-items:center;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid #0f172a;font-size:.87rem;}
+  .aspect-row:last-child{border-bottom:none;}
+  .aspect-kw{color:#e2e8f0;font-weight:500;}
+  .asp-pos{background:#0d2018;color:#4ade80;padding:3px 10px;border-radius:12px;font-size:.78rem;font-weight:700;border:1px solid #4ade80;}
+  .asp-neg{background:#2b0d15;color:#f87171;padding:3px 10px;border-radius:12px;font-size:.78rem;font-weight:700;border:1px solid #f87171;}
+  .asp-neu{background:#1a1f2e;color:#94a3b8;padding:3px 10px;border-radius:12px;font-size:.78rem;font-weight:700;border:1px solid #475569;}
+  .asp-conf{color:#475569;font-size:.78rem;}
+
+  .report-card{background:#0a1628;border:1px solid #1e3a5f;border-radius:12px;padding:1.1rem 1.4rem;margin-top:.8rem;}
+  .report-card h4{color:#fbbf24;margin:0 0 .7rem;font-size:.9rem;font-weight:600;}
+  .report-card p{color:#8892a4;font-size:.82rem;margin:0;line-height:1.7;}
+
+  .info-card{background:#0a1628;border:1px solid #1e3a5f;border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:1rem;}
+  .info-card h4{color:#60a5fa;margin:0 0 .5rem;font-size:.92rem;font-weight:600;}
+  .info-card p{color:#8892a4;font-size:.83rem;line-height:1.7;margin:0;}
+
+  .cv-block{background:#0d1117;border-left:3px solid #e94560;border-radius:0 10px 10px 0;padding:1.2rem 1.5rem;margin:1rem 0;font-family:'Space Mono',monospace;font-size:.82rem;color:#94a3b8;line-height:1.8;}
+  .cv-block .cv-title{color:#e94560;font-weight:700;font-size:.9rem;}
+  .cv-block .cv-tech{color:#60a5fa;margin-top:.5rem;}
+
+  section[data-testid="stSidebar"]{background:#080d14 !important;}
+  div[data-testid="stDownloadButton"] button{background:#e94560 !important;color:white !important;border:none !important;border-radius:8px !important;font-weight:600 !important;}
+
+  [data-testid="metric-container"]{background:#0d1117;border:1px solid #1e293b;border-radius:10px;padding:.8rem 1rem;}
+  [data-testid="metric-container"] label{color:#64748b !important;font-size:.78rem !important;}
+  [data-testid="metric-container"] [data-testid="stMetricValue"]{color:#e2e8f0 !important;font-size:1.45rem !important;font-weight:700 !important;}
+
+  button[data-baseweb="tab"][aria-selected="true"]{color:#e94560 !important;border-bottom:2px solid #e94560 !important;}
+  button[data-baseweb="tab"]{color:#64748b !important;}
+  .stSpinner > div > div{border-top-color:#e94560 !important;}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ─── Model loader (cached) ────────────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading ML model...")
+# ─────────────────────────────────────────────────────────────────────────────
+# SAMPLE DATA
+# ─────────────────────────────────────────────────────────────────────────────
+QUICK_DEMO_TEXT = (
+    "I absolutely love this new phone. The battery life is incredible, "
+    "the camera is outstanding, and the price is very reasonable for what you get!"
+)
+
+SINGLE_EXAMPLES = {
+    "😊 Positive":   "I absolutely love this product — best purchase I've made all year! Premium build and super fast delivery.",
+    "😠 Negative":   "Absolutely terrible. Stopped working after 2 days, customer support was rude and completely unhelpful.",
+    "😐 Neutral":    "The product is okay. Does what it claims, nothing more. No major complaints but nothing impressive either.",
+    "📱 Tech Tweet": "Just updated to the latest Android version. New UI is clean and gestures feel very smooth.",
+    "🍽️ Food Review":"Tried the new restaurant downtown. Food was average, service slow, but ambience was nice.",
+}
+
+SAMPLE_TWEETS = [
+    "I absolutely love the new iPhone update! Super smooth and fast 🚀",
+    "Tesla's build quality has really gone downhill. Very disappointing.",
+    "Just finished reading Atomic Habits — genuinely life-changing book.",
+    "Why is every app asking for unnecessary permissions? Ridiculous.",
+    "The new Zomato update is actually pretty decent, no major complaints.",
+    "Amazon delivery was 3 days late. No apology, no refund. Never again.",
+    "ChatGPT just helped me debug a nasty production issue in 10 minutes!",
+    "The movie was okay. Not great, not terrible. Just average.",
+    "Swiggy delivered cold food for the third time this week. Furious.",
+    "Weekend hiking trip with friends — best decision I've made this year!",
+    "Public WiFi at this airport is absolutely unusable. Completely useless.",
+    "New season of the show dropped and it's actually fire 🔥",
+    "The gym was packed again today. Need to start going at 6 AM.",
+    "Product packaging was damaged on arrival. Support was very helpful though.",
+    "Team won the match last night. What a game! Absolutely historic.",
+    "This new policy is absolutely ridiculous. Who approved this?",
+    "Loving the new VS Code extension — saves me so much time every day.",
+    "Worst hotel stay of my life. Dirty rooms, rude staff, broken AC.",
+    "Had a pretty okay day. Nothing special really happened.",
+    "The new MacBook battery life is insane — 18 hours easily!",
+]
+
+SAMPLE_REVIEWS = [
+    ("Absolutely loved this product — best purchase I've made all year!",       "Electronics"),
+    ("Terrible customer service. Waited 2 hours and got zero help.",             "Support"),
+    ("Decent product overall. Does what it claims, nothing more.",               "Electronics"),
+    ("The battery life is incredible. Easily lasts 2 full days.",                "Electronics"),
+    ("Stopped working after 3 days. Total waste of money.",                      "Electronics"),
+    ("Packaging was great and delivery was super fast. Very satisfied.",          "Shipping"),
+    ("Interface is confusing and laggy. The UX needs a lot of work.",            "Software"),
+    ("Highly recommend to everyone. Great value for the price.",                 "Electronics"),
+    ("Not worth it at all. Cheaper alternatives work far better.",               "Electronics"),
+    ("Pretty good for the price. Not perfect but definitely usable.",            "Electronics"),
+    ("Broke after first use. Absolute garbage quality control.",                 "Electronics"),
+    ("Works exactly as described in the listing. Happy customer.",               "Electronics"),
+    ("Customer support was rude and unhelpful. Really bad experience.",          "Support"),
+    ("Solid build quality and great design. Very happy with this.",              "Electronics"),
+    ("Average product. Nothing special but no major issues either.",             "Electronics"),
+    ("Shipping was incredibly fast! Got it within 24 hours.",                    "Shipping"),
+    ("Completely different from the photos. False advertising.",                 "Electronics"),
+    ("Great sound quality, easy setup. Exactly what I was looking for.",         "Electronics"),
+    ("App keeps crashing on my phone. Very frustrating experience.",             "Software"),
+    ("Exceeded all expectations! Will definitely buy from this brand again.",    "Electronics"),
+]
+
+STOPWORDS = {
+    "the","a","an","is","in","it","to","and","or","of","was","for","that",
+    "this","on","at","i","my","me","so","be","are","its","but","not","with",
+    "have","had","has","just","really","very","been","they","you","we","he",
+    "she","as","by","from","im","ive","get","got","do","did","our","their",
+    "would","could","should","wont","dont","cant","after","before","also","ll",
+    "ve","re","s","t","m","d",
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODEL — 3-tier (Transformer → sklearn → lexicon)
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner="Loading AI model…")
 def load_model():
-    """
-    Tries to load a HuggingFace transformer pipeline first.
-    Falls back to a lightweight sklearn Logistic Regression trained
-    on a small seed dataset so the app always works even on CPU-only spaces.
-    """
     try:
         from transformers import pipeline
-        clf = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+        clf = pipeline("sentiment-analysis",
+                       model="distilbert-base-uncased-finetuned-sst-2-english")
         return ("transformer", clf)
     except Exception:
         pass
-
     try:
         from sklearn.linear_model import LogisticRegression
         from sklearn.feature_extraction.text import TfidfVectorizer
-        import pickle, os
-
-        seed_texts = [
-            "I love this product", "amazing service", "excellent quality", "great experience",
-            "very happy", "wonderful", "fantastic", "best ever", "highly recommend", "perfect",
-            "I hate this", "terrible service", "awful quality", "worst experience", "very bad",
-            "horrible", "dreadful", "never again", "waste of money", "poor quality",
-            "it was okay", "not bad", "average", "nothing special", "could be better",
-            "decent enough", "mediocre", "so-so", "neither good nor bad", "just fine",
-        ]
-        seed_labels = [1]*10 + [0]*10 + [2]*10
-
-        vec = TfidfVectorizer(ngram_range=(1, 2))
-        X = vec.fit_transform(seed_texts)
-        clf = LogisticRegression(max_iter=500, multi_class='multinomial')
-        clf.fit(X, seed_labels)
+        pos = ["love this","amazing product","excellent quality","great experience",
+               "very happy","wonderful","fantastic result","best ever",
+               "highly recommend","perfect quality","super fast","exceeded expectations",
+               "really impressed","absolutely brilliant","works flawlessly"]
+        neg = ["hate this","terrible product","awful quality","worst experience",
+               "very bad","horrible","dreadful","never again","waste of money",
+               "poor quality","damaged","complete disappointment","really bad",
+               "absolutely useless","stopped working","broke after"]
+        neu = ["it was okay","not bad","average quality","nothing special",
+               "could be better","decent enough","mediocre","just fine",
+               "neither good nor bad","sort of okay","passable","tolerable",
+               "does the job","so so","not great not terrible"]
+        texts  = pos + neg + neu
+        labels = [1]*len(pos) + [0]*len(neg) + [2]*len(neu)
+        vec = TfidfVectorizer(ngram_range=(1,2), min_df=1)
+        X   = vec.fit_transform(texts)
+        clf = LogisticRegression(max_iter=1000, C=2.0)
+        clf.fit(X, labels)
         return ("sklearn", vec, clf)
-    except Exception as e:
-        return ("dummy", None)
+    except Exception:
+        pass
+    return ("lexicon", None)
 
 
-def predict(text, model_pack):
-    """Returns (label_str, confidence_dict)"""
+def predict(text: str, mp: tuple):
     text = text.strip()
     if not text:
-        return "Neutral", {"Positive": 0.33, "Negative": 0.33, "Neutral": 0.34}
-
-    kind = model_pack[0]
-
+        return "Neutral", {"Positive":0.33,"Negative":0.33,"Neutral":0.34}
+    kind = mp[0]
     if kind == "transformer":
-        pipe = model_pack[1]
-        res = pipe(text[:512])[0]
-        label = res["label"]
-        score = res["score"]
-        if label == "POSITIVE":
-            return "Positive", {"Positive": score, "Negative": round((1-score)*0.4, 3), "Neutral": round((1-score)*0.6, 3)}
-        else:
-            return "Negative", {"Negative": score, "Positive": round((1-score)*0.4, 3), "Neutral": round((1-score)*0.6, 3)}
-
+        res = mp[1](text[:512])[0]
+        s   = res["score"]
+        if res["label"] == "POSITIVE":
+            return "Positive", {"Positive":round(s,3),"Negative":round((1-s)*.35,3),"Neutral":round((1-s)*.65,3)}
+        return "Negative", {"Negative":round(s,3),"Positive":round((1-s)*.35,3),"Neutral":round((1-s)*.65,3)}
     if kind == "sklearn":
-        vec, clf = model_pack[1], model_pack[2]
+        vec,clf = mp[1],mp[2]
         X = vec.transform([text])
         probs = clf.predict_proba(X)[0]
-        classes = clf.classes_
-        label_map = {0: "Negative", 1: "Positive", 2: "Neutral"}
-        conf = {label_map[c]: round(float(p), 3) for c, p in zip(classes, probs)}
-        pred = label_map[clf.predict(X)[0]]
-        return pred, conf
-
-    # dummy fallback
-    words = text.lower().split()
-    pos_w = {"love","great","good","amazing","excellent","wonderful","fantastic","best","happy","perfect"}
-    neg_w = {"hate","bad","terrible","awful","horrible","worst","poor","dreadful","useless","disappointing"}
-    ps = sum(1 for w in words if w in pos_w)
-    ns = sum(1 for w in words if w in neg_w)
-    if ps > ns:
-        return "Positive", {"Positive": 0.75, "Negative": 0.10, "Neutral": 0.15}
-    elif ns > ps:
-        return "Negative", {"Negative": 0.75, "Positive": 0.10, "Neutral": 0.15}
-    return "Neutral", {"Neutral": 0.60, "Positive": 0.22, "Negative": 0.18}
-
-
-def sentiment_color(s):
-    if s == "Positive": return "tag-pos"
-    if s == "Negative": return "tag-neg"
-    return "tag-neu"
+        lmap  = {0:"Negative",1:"Positive",2:"Neutral"}
+        conf  = {lmap[c]:round(float(p),3) for c,p in zip(clf.classes_,probs)}
+        return lmap[clf.predict(X)[0]], conf
+    POS={"love","great","good","amazing","excellent","wonderful","fantastic","best","happy",
+         "perfect","brilliant","superb","outstanding","awesome","recommend","impressive",
+         "satisfied","delighted","pleased","incredible","fast","smooth","clean","easy",
+         "helpful","friendly","beautiful"}
+    NEG={"hate","bad","terrible","awful","horrible","worst","poor","dreadful","useless",
+         "disappointing","broken","damaged","waste","ridiculous","frustrating","annoying",
+         "disgusting","pathetic","garbage","trash","slow","laggy","crashing","scam",
+         "fake","rude","dirty","late"}
+    words = re.findall(r"[a-z]+", text.lower())
+    ps = sum(1 for w in words if w in POS)
+    ns = sum(1 for w in words if w in NEG)
+    if ps>ns: return "Positive",{"Positive":0.72,"Negative":0.10,"Neutral":0.18}
+    if ns>ps: return "Negative",{"Negative":0.72,"Positive":0.10,"Neutral":0.18}
+    return "Neutral",{"Neutral":0.60,"Positive":0.22,"Negative":0.18}
 
 
-def clean_text(t):
-    t = re.sub(r"http\S+|www\S+", "", t)
-    t = re.sub(r"@\w+|#\w+", "", t)
-    t = re.sub(r"[^a-zA-Z\s]", "", t)
-    return t.strip().lower()
+def run_batch(texts: list, mp: tuple):
+    labels,confs = [],[]
+    for t in texts:
+        lbl,cf = predict(str(t),mp)
+        labels.append(lbl); confs.append(round(max(cf.values())*100,1))
+    return labels,confs
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ASPECT-BASED SENTIMENT  ← new
+# ─────────────────────────────────────────────────────────────────────────────
+ASPECT_KW = {
+    "Battery":     ["battery","charge","charging","power","drain","backup"],
+    "Camera":      ["camera","photo","picture","image","lens","video","selfie"],
+    "Price":       ["price","cost","value","expensive","cheap","worth","money","affordable"],
+    "Display":     ["screen","display","brightness","resolution","panel","colour","color"],
+    "Build":       ["build","quality","design","material","plastic","metal","premium"],
+    "Delivery":    ["delivery","shipping","arrived","packaging","dispatched","courier"],
+    "Support":     ["support","service","help","response","staff","team","refund","return"],
+    "Software":    ["software","app","update","feature","bug","crash","interface","ui","ux"],
+    "Sound":       ["sound","audio","speaker","headphone","earphone","noise","volume","bass"],
+    "Performance": ["speed","performance","fast","slow","lag","processor","ram","powerful"],
+}
+
+def aspect_sentiment(text: str, mp: tuple) -> list:
+    tl = text.lower()
+    out = []
+    for aspect, kws in ASPECT_KW.items():
+        for kw in kws:
+            if kw in tl:
+                sents    = re.split(r"[.!?,;]", text)
+                relevant = " ".join(s for s in sents if kw in s.lower()) or text
+                lbl,cf   = predict(relevant, mp)
+                out.append({"Aspect":aspect,"Keyword":kw,
+                             "Sentiment":lbl,"Confidence":round(max(cf.values())*100,1)})
+                break
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORT GENERATOR  ← new
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_report(df: pd.DataFrame, source: str="Dataset") -> bytes:
+    buf  = io.StringIO()
+    now  = datetime.now().strftime("%Y-%m-%d %H:%M")
+    total = len(df)
+    buf.write(f"AI Sentiment Intelligence Studio — Sentiment Report\n")
+    buf.write(f"Generated:,{now}\nSource:,{source}\nTotal Records:,{total}\n\n")
+    buf.write("=== SUMMARY METRICS ===\nSentiment,Count,Percentage\n")
+    for lbl in ["Positive","Negative","Neutral"]:
+        cnt = (df["Sentiment"]==lbl).sum()
+        buf.write(f"{lbl},{cnt},{cnt/total*100:.1f}%\n")
+    if "Confidence (%)" in df.columns:
+        buf.write(f"\nAverage Confidence,{df['Confidence (%)'].mean():.1f}%\n")
+        buf.write(f"Min Confidence,{df['Confidence (%)'].min():.1f}%\n")
+        buf.write(f"Max Confidence,{df['Confidence (%)'].max():.1f}%\n")
+    buf.write("\n=== FULL RESULTS ===\n")
+    df.to_csv(buf, index=False)
+    return buf.getvalue().encode()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CHARTS
+# ─────────────────────────────────────────────────────────────────────────────
+COLORS = {"Positive":"#4ade80","Negative":"#f87171","Neutral":"#94a3b8"}
+_BG = "rgba(0,0,0,0)"; _F = "#94a3b8"
+_T  = lambda t: dict(text=t,font=dict(color="#e2e8f0",size=14))
+
+def chart_confidence(conf):
+    fig = go.Figure(go.Bar(
+        x=list(conf.keys()), y=[v*100 for v in conf.values()],
+        marker_color=[COLORS.get(k,"#888") for k in conf.keys()],
+        text=[f"{v*100:.1f}%" for v in conf.values()], textposition="outside",
+    ))
+    fig.update_layout(paper_bgcolor=_BG,plot_bgcolor=_BG,font_color=_F,height=260,
+                      yaxis=dict(range=[0,115],showgrid=False,zeroline=False),
+                      xaxis=dict(showgrid=False,tickfont=dict(size=13,color="#cbd5e1")),
+                      margin=dict(t=20,b=10,l=10,r=10),title=_T("Confidence Scores"))
+    return fig
+
+def chart_pie(df):
+    c = df["Sentiment"].value_counts().reset_index(); c.columns=["Sentiment","Count"]
+    fig = px.pie(c,values="Count",names="Sentiment",color="Sentiment",
+                 color_discrete_map=COLORS,hole=0.42)
+    fig.update_traces(textfont_size=13,textinfo="percent+label",
+                      marker=dict(line=dict(color="#0d1117",width=2)))
+    fig.update_layout(paper_bgcolor=_BG,font_color=_F,height=300,
+                      legend=dict(font=dict(color=_F)),title=_T("Sentiment Distribution"))
+    return fig
+
+def chart_bar(df):
+    c = df["Sentiment"].value_counts().reset_index(); c.columns=["Sentiment","Count"]
+    fig = px.bar(c,x="Sentiment",y="Count",color="Sentiment",
+                 color_discrete_map=COLORS,text="Count")
+    fig.update_traces(textposition="outside")
+    fig.update_layout(paper_bgcolor=_BG,plot_bgcolor=_BG,font_color=_F,height=280,
+                      showlegend=False,xaxis=dict(showgrid=False),
+                      yaxis=dict(showgrid=False,zeroline=False),
+                      margin=dict(t=30,b=10),title=_T("Count by Sentiment"))
+    return fig
+
+def chart_timeline(df):
+    df = df.copy()
+    if "time" not in df.columns:
+        df["time"] = pd.date_range(start="2024-01-01",periods=len(df),freq="h")
+    df["score"]   = df["Sentiment"].map({"Positive":1,"Neutral":0,"Negative":-1}).fillna(0)
+    df["rolling"] = df["score"].rolling(window=max(1,len(df)//6),min_periods=1).mean()
+    fig = px.area(df,x="time",y="rolling",color_discrete_sequence=["#e94560"])
+    fig.update_traces(line_width=2,fillcolor="rgba(233,69,96,.12)")
+    fig.update_layout(paper_bgcolor=_BG,plot_bgcolor=_BG,font_color=_F,height=280,
+                      xaxis=dict(showgrid=False,title=""),
+                      yaxis=dict(range=[-1.3,1.3],title="Score",gridcolor="#1e293b",
+                                 zeroline=True,zerolinecolor="#334155"),
+                      margin=dict(t=30,b=10),title=_T("Sentiment Trend Over Time"))
+    return fig
+
+def chart_wordfreq(text_series, top_n=15):
+    words  = " ".join(text_series.fillna("").apply(_clean)).split()
+    words  = [w for w in words if w not in STOPWORDS and len(w)>2]
+    common = Counter(words).most_common(top_n)
+    if not common: return None
+    lbs,vals = zip(*common)
+    fig = px.bar(x=list(vals),y=list(lbs),orientation="h",
+                 color=list(vals),color_continuous_scale="RdYlGn",text=list(vals))
+    fig.update_traces(textposition="outside")
+    fig.update_layout(paper_bgcolor=_BG,plot_bgcolor=_BG,font_color=_F,
+                      height=420,showlegend=False,coloraxis_showscale=False,
+                      xaxis=dict(showgrid=False),yaxis=dict(autorange="reversed",showgrid=False),
+                      margin=dict(l=110,t=30),title=_T(f"Top {top_n} Keywords"))
+    return fig
 
 def make_wordcloud(text_series):
-    combined = " ".join(text_series.fillna("").apply(clean_text))
-    if len(combined.strip()) < 5:
-        return None
-    wc = WordCloud(width=800, height=350, background_color="black",
-                   colormap="RdYlGn", max_words=100).generate(combined)
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.imshow(wc, interpolation="bilinear")
-    ax.axis("off")
-    fig.patch.set_facecolor("#0d1117")
+    words = " ".join(text_series.fillna("").apply(_clean)).split()
+    words = [w for w in words if w not in STOPWORDS and len(w)>2]
+    if len(words)<5: return None
+    wc  = WordCloud(width=900,height=360,background_color="#0d1117",
+                    colormap="RdYlGn",max_words=120,collocations=False).generate(" ".join(words))
+    fig,ax = plt.subplots(figsize=(11,4.2))
+    ax.imshow(wc,interpolation="bilinear"); ax.axis("off")
+    fig.patch.set_facecolor("#0d1117"); fig.tight_layout(pad=0)
     return fig
 
+def _clean(t):
+    t = re.sub(r"http\S+|www\S+","",t)
+    t = re.sub(r"[@#]\w+","",t)
+    t = re.sub(r"[^a-zA-Z\s]","",t)
+    return t.strip().lower()
 
-def prob_chart(conf_dict):
-    colors = {"Positive": "#68d391", "Negative": "#fc8181", "Neutral": "#a0aec0"}
-    fig = go.Figure(go.Bar(
-        x=list(conf_dict.keys()),
-        y=[v * 100 for v in conf_dict.values()],
-        marker_color=[colors.get(k, "#gray") for k in conf_dict.keys()],
-        text=[f"{v*100:.1f}%" for v in conf_dict.values()],
-        textposition="outside",
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font_color="#a0aec0",
-        yaxis=dict(range=[0, 110], showgrid=False, zeroline=False),
-        xaxis=dict(showgrid=False),
-        height=280,
-        margin=dict(t=20, b=10, l=10, r=10),
-    )
-    return fig
+def tag_class(s): return {"Positive":"tag-pos","Negative":"tag-neg"}.get(s,"tag-neu")
 
+def show_metrics(df, ncols=4):
+    total = len(df)
+    pos=(df["Sentiment"]=="Positive").sum()
+    neg=(df["Sentiment"]=="Negative").sum()
+    neu=(df["Sentiment"]=="Neutral").sum()
+    if ncols==5 and "Confidence (%)" in df.columns:
+        m1,m2,m3,m4,m5 = st.columns(5)
+        m1.metric("📝 Total",           total)
+        m2.metric("😊 Positive",        f"{pos} ({pos/total*100:.0f}%)")
+        m3.metric("😠 Negative",        f"{neg} ({neg/total*100:.0f}%)")
+        m4.metric("😐 Neutral",         f"{neu} ({neu/total*100:.0f}%)")
+        m5.metric("🎯 Avg Confidence",  f"{df['Confidence (%)'].mean():.1f}%")
+    else:
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("📝 Total",    total)
+        m2.metric("😊 Positive", f"{pos} ({pos/total*100:.0f}%)")
+        m3.metric("😠 Negative", f"{neg} ({neg/total*100:.0f}%)")
+        m4.metric("😐 Neutral",  f"{neu} ({neu/total*100:.0f}%)")
 
-def timeline_chart(df):
-    if "time" not in df.columns:
-        df = df.copy()
-        df["time"] = pd.date_range(start="2024-01-01", periods=len(df), freq="h")
-    score_map = {"Positive": 1, "Neutral": 0, "Negative": -1}
-    df["score"] = df["Sentiment"].map(score_map).fillna(0)
-    df["rolling"] = df["score"].rolling(window=max(1, len(df)//5), min_periods=1).mean()
-    fig = px.line(df, x="time", y="rolling", title="Sentiment Trend Over Time",
-                  color_discrete_sequence=["#e94560"])
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      font_color="#a0aec0", height=300,
-                      yaxis=dict(title="Score", range=[-1.2, 1.2]))
-    return fig
-
-
-def word_freq_chart(text_series, top_n=15):
-    stopwords = {"the","a","an","is","in","it","to","and","or","of","was","for","that","this","on","at","i","my","me","so","be"}
-    words = " ".join(text_series.fillna("").apply(clean_text)).split()
-    words = [w for w in words if w not in stopwords and len(w) > 2]
-    common = Counter(words).most_common(top_n)
-    if not common:
-        return None
-    fig = px.bar(x=[w[1] for w in common], y=[w[0] for w in common],
-                 orientation="h", title="Top Words",
-                 color=[w[1] for w in common], color_continuous_scale="RdYlGn")
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      font_color="#a0aec0", height=400, showlegend=False,
-                      yaxis=dict(autorange="reversed"), margin=dict(l=100))
-    return fig
+def _report_download(df, label, fname):
+    """Render report card + two download buttons."""
+    st.markdown(f"""
+<div class="report-card">
+  <h4>📄 Download Sentiment Report</h4>
+  <p>Full report = executive summary metrics (total, %, avg confidence)
+     + all classified rows in one CSV file.</p>
+</div>""", unsafe_allow_html=True)
+    r1,r2 = st.columns(2)
+    r1.download_button("📄 Download Full Report",
+                       generate_report(df,label),
+                       fname,"text/csv",use_container_width=True)
+    r2.download_button("⬇️ Raw Results CSV",
+                       df.to_csv(index=False).encode(),
+                       fname.replace("report_","raw_"),"text/csv",
+                       use_container_width=True)
 
 
-def dist_chart(df):
-    counts = df["Sentiment"].value_counts().reset_index()
-    counts.columns = ["Sentiment", "Count"]
-    color_map = {"Positive": "#68d391", "Negative": "#fc8181", "Neutral": "#a0aec0"}
-    fig = px.pie(counts, values="Count", names="Sentiment",
-                 color="Sentiment", color_discrete_map=color_map,
-                 title="Sentiment Distribution")
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#a0aec0", height=300)
-    return fig
+# ─────────────────────────────────────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────────────────────────────────────
+for k,v in {"single_text":"","csv_results":None,"tweet_df":None,"demo_result":None}.items():
+    if k not in st.session_state: st.session_state[k]=v
 
-
-# ─── Load model ──────────────────────────────────────────────────────────────
 model_pack = load_model()
 model_kind = model_pack[0]
 
-# ─── Sidebar ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# SIDEBAR
+# ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⚙️ Model Info")
-    if model_kind == "transformer":
-        st.success("🤗 Transformer (DistilBERT)")
+    st.markdown("### 🧠 Model Status")
+    if model_kind=="transformer":
+        st.success("🤗 DistilBERT — Active")
         st.markdown("""
-| Property | Value |
+| | |
 |---|---|
-| Model | DistilBERT |
-| Dataset | SST-2 |
-| Labels | Positive / Negative |
-| Accuracy | ~91% |
+|**Model**|DistilBERT-SST2|
+|**Dataset**|Stanford SST-2|
+|**Accuracy**|~91%|
+|**Type**|Transformer|
+|**Labels**|Positive / Negative|
 """)
-    elif model_kind == "sklearn":
-        st.info("📐 Logistic Regression")
-        st.markdown("""
-| Property | Value |
-|---|---|
-| Model | Logistic Regression |
-| Vectorizer | TF-IDF |
-| Labels | Pos / Neg / Neutral |
-| Training | Seed dataset |
-""")
+    elif model_kind=="sklearn":
+        st.info("📐 Logistic Regression — Active")
     else:
-        st.warning("🔧 Rule-based fallback")
+        st.warning("🔧 Lexicon fallback — Active")
 
     st.divider()
-    st.markdown("## 🛠️ Settings")
-    show_confidence = st.toggle("Show confidence chart", value=True)
-    show_wordcloud  = st.toggle("Show word cloud", value=True)
-    show_timeline   = st.toggle("Show timeline chart", value=True)
-    show_wordfreq   = st.toggle("Show word frequency", value=True)
+    st.markdown("### ⚙️ Display Settings")
+    show_conf      = st.toggle("Confidence chart",  value=True)
+    show_aspect    = st.toggle("Aspect analysis",   value=True)
+    show_pie       = st.toggle("Pie chart",         value=True)
+    show_bar       = st.toggle("Bar chart",         value=True)
+    show_timeline  = st.toggle("Trend timeline",    value=True)
+    show_wordfreq  = st.toggle("Word frequency",    value=True)
+    show_wordcloud = st.toggle("Word cloud",        value=True)
 
     st.divider()
-    st.markdown("## 📖 About")
-    st.caption(
-        "AI Sentiment Intelligence Studio — built with Streamlit + "
-        "HuggingFace Transformers. Analyzes text, tweets, and CSV datasets."
-    )
+    st.markdown("### 📖 About")
+    st.markdown("""
+<div class="info-card">
+  <h4>AI Sentiment Intelligence Studio</h4>
+  <p>NLP dashboard for real-time text sentiment.<br>
+  DistilBERT transformer + scikit-learn fallback.<br><br>
+  <b style="color:#60a5fa;">Use cases:</b><br>
+  • Brand & social media monitoring<br>
+  • Customer feedback analytics<br>
+  • Product review classification</p>
+</div>""", unsafe_allow_html=True)
+    st.caption("Built by **Ojas Waykole** · GCE Jalgaon")
 
-# ─── Hero section ─────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HERO
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div class="hero-box">
-  <h1>🤖 AI Sentiment Intelligence Studio</h1>
-  <p>
-    Analyze sentiment from <b>reviews, tweets, and datasets</b> using Machine Learning.<br>
-    Understand public opinion and customer feedback in seconds.
+<div class="hero-wrap">
+  <div class="hero-title">🧠 AI Sentiment Intelligence Studio</div>
+  <p class="hero-sub">
+    Real-time NLP sentiment analysis for text, social media, and large datasets.<br>
+    Powered by HuggingFace Transformers · Deployed on HuggingFace Spaces.
   </p>
-  <p style="margin-top:0.8rem;">
-    🔍 Text Prediction &nbsp;|&nbsp;
-    🐦 Tweet Batch Analyzer &nbsp;|&nbsp;
-    📊 CSV Dataset Dashboard &nbsp;|&nbsp;
-    ☁️ Word Cloud &nbsp;|&nbsp;
-    📈 Analytics
-  </p>
+  <div class="hero-badges">
+    <span class="b-red">🔍 Text Analysis</span>
+    <span class="b-blue">🐦 Social Media</span>
+    <span class="b-green">📂 Dataset Upload</span>
+    <span class="b-gold">📊 Analytics</span>
+    <span class="b-purple">💼 Portfolio Project</span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ─── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🔍 Single Text",
-    "🐦 Tweet Analyzer",
-    "📂 CSV Analyzer",
-    "📈 Analytics",
-    "🌐 Topic Monitor",
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ✅ IMPROVEMENT 2 — QUICK DEMO STRIP
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("#### ⚡ Quick Demo — try the AI in one click")
+qd1,qd2,qd3,qd4 = st.columns([2.5,1,1,1])
+qd1.caption("No typing needed — load any example instantly and see live AI prediction.")
+run_demo = qd2.button("⚡ Analyze Example",  use_container_width=True)
+load_csv = qd3.button("📂 Load Sample CSV",  use_container_width=True)
+load_twt = qd4.button("🐦 Load Tweets",      use_container_width=True)
+
+if run_demo:
+    with st.spinner("Running AI…"):
+        lbl,cf = predict(QUICK_DEMO_TEXT,model_pack)
+    st.session_state["demo_result"] = (QUICK_DEMO_TEXT,lbl,cf)
+
+if load_csv:
+    texts,cats = zip(*SAMPLE_REVIEWS)
+    with st.spinner("Loading sample CSV…"):
+        labels,confs = run_batch(list(texts),model_pack)
+    st.session_state["csv_results"] = pd.DataFrame(
+        {"Text":list(texts),"Category":list(cats),"Sentiment":labels,"Confidence (%)":confs})
+    st.success("✅ Sample dataset loaded — open **Dataset Analyzer** tab.")
+
+if load_twt:
+    with st.spinner("Analyzing sample tweets…"):
+        labels,confs = run_batch(SAMPLE_TWEETS,model_pack)
+    st.session_state["tweet_df"] = pd.DataFrame(
+        {"Tweet":SAMPLE_TWEETS,"Sentiment":labels,"Confidence (%)":confs})
+    st.success("✅ Sample tweets loaded — open **Social Media Analyzer** tab.")
+
+if st.session_state["demo_result"]:
+    demo_text,lbl,cf = st.session_state["demo_result"]
+    st.markdown(f"""
+<div class="result-card">
+  <h3>⚡ Quick Demo Result</h3>
+  <p style="color:#94a3b8;font-size:.88rem;margin-bottom:.7rem;font-style:italic;">"{demo_text}"</p>
+  <span class="{tag_class(lbl)}">{lbl}</span>
+  <p class="conf-note">Confidence: <b>{max(cf.values())*100:.1f}%</b>
+     &nbsp;·&nbsp; Model: <b>{model_kind}</b></p>
+</div>""", unsafe_allow_html=True)
+    if show_conf:
+        st.plotly_chart(chart_confidence(cf), use_container_width=True)
+
+st.markdown("---")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ✅ IMPROVEMENT 1 — RENAMED TABS (SaaS-style)
+# ─────────────────────────────────────────────────────────────────────────────
+tab1,tab2,tab3,tab4,tab5 = st.tabs([
+    "🔍 Text Analysis",
+    "🐦 Social Media Analyzer",
+    "📂 Dataset Analyzer",
+    "📊 Analytics Dashboard",
+    "👨‍💻 About the Project",
 ])
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — Single Text Analysis
-# ═══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — TEXT ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.subheader("Analyze Any Text")
+    st.subheader("🔍 Text Analysis")
+    st.caption("Analyze any sentence, review, or paragraph — with aspect-level breakdown.")
 
-    # Example buttons
+    # ✅ IMPROVEMENT 3 — MODEL EXPLANATION CARD
+    with st.expander("🧠 How the AI Model Works", expanded=False):
+        if model_kind=="transformer":
+            st.markdown("""
+<div class="model-card">
+  <h4>🤗 DistilBERT Transformer — Active</h4>
+  <div class="model-row"><span class="mk">Model</span><span class="mv">distilbert-base-uncased-finetuned-sst-2-english</span></div>
+  <div class="model-row"><span class="mk">Architecture</span><span class="mv">Transformer (BERT-family, 6 attention layers)</span></div>
+  <div class="model-row"><span class="mk">Training Dataset</span><span class="mv">Stanford Sentiment Treebank v2 (SST-2)</span></div>
+  <div class="model-row"><span class="mk">Accuracy</span><span class="mv">~91% on SST-2 benchmark</span></div>
+  <div class="model-row"><span class="mk">Speed vs BERT</span><span class="mv">60% faster · 40% smaller · 97% of BERT's understanding</span></div>
+  <div class="model-row"><span class="mk">Task</span><span class="mv">Binary sentiment classification → Positive / Negative</span></div>
+  <div class="model-row"><span class="mk">Max Input</span><span class="mv">512 tokens (~400 words)</span></div>
+  <div class="model-row"><span class="mk">Source</span><span class="mv">HuggingFace Model Hub (open-source)</span></div>
+</div>""", unsafe_allow_html=True)
+        elif model_kind=="sklearn":
+            st.markdown("""
+<div class="model-card">
+  <h4>📐 Logistic Regression + TF-IDF — Active</h4>
+  <div class="model-row"><span class="mk">Vectorizer</span><span class="mv">TF-IDF with bigrams (1,2)</span></div>
+  <div class="model-row"><span class="mk">Classifier</span><span class="mv">Logistic Regression (C=2.0, max_iter=1000)</span></div>
+  <div class="model-row"><span class="mk">Labels</span><span class="mv">Positive / Negative / Neutral</span></div>
+  <div class="model-row"><span class="mk">Why active</span><span class="mv">Transformers unavailable in this environment</span></div>
+</div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""
+<div class="model-card">
+  <h4>🔧 Lexicon Fallback — Active</h4>
+  <div class="model-row"><span class="mk">Method</span><span class="mv">Keyword matching on curated POS/NEG word lists</span></div>
+  <div class="model-row"><span class="mk">Labels</span><span class="mv">Positive / Negative / Neutral</span></div>
+</div>""", unsafe_allow_html=True)
+
     st.markdown("**Try an example:**")
-    examples = [
-        "I absolutely love this product — best purchase I've made all year!",
-        "The customer service was terrible. I waited 2 hours for nothing.",
-        "The experience was okay. Nothing really stood out, but no complaints either.",
-    ]
-    c1, c2, c3 = st.columns(3)
-    clicked = None
-    if c1.button("😊 Positive example", use_container_width=True): clicked = examples[0]
-    if c2.button("😠 Negative example", use_container_width=True): clicked = examples[1]
-    if c3.button("😐 Neutral example",  use_container_width=True): clicked = examples[2]
+    ex_cols = st.columns(len(SINGLE_EXAMPLES))
+    for col,(lbl,txt) in zip(ex_cols, SINGLE_EXAMPLES.items()):
+        if col.button(lbl, use_container_width=True):
+            st.session_state["single_text"] = txt
 
-    default_val = clicked if clicked else st.session_state.get("single_text", "")
-    user_text = st.text_area("Enter your text here:", value=default_val,
-                              height=140, key="single_text",
-                              placeholder="Type a review, tweet, comment…")
+    user_text = st.text_area(
+        "Enter your text:", height=130, key="single_text",
+        placeholder="Type a review, tweet, feedback, or any sentence…",
+    )
 
     if st.button("🔍 Analyze Sentiment", type="primary", use_container_width=True):
         if user_text.strip():
-            with st.spinner("Analyzing…"):
-                label, conf = predict(user_text, model_pack)
-
-            tag_cls = sentiment_color(label)
+            with st.spinner("Running AI model…"):
+                label,conf = predict(user_text, model_pack)
             st.markdown(f"""
-            <div style="background:#1a1a2e;border-radius:12px;padding:1.2rem;margin-top:1rem;border:1px solid #2d3748;">
-              <h3 style="color:#e2e8f0;margin-bottom:0.5rem;">Result</h3>
-              <span class="{tag_cls}" style="font-size:1.1rem;">{label}</span>
-              <p style="color:#718096;margin-top:0.8rem;font-size:0.9rem;">
-                Top confidence: <b style="color:#e2e8f0;">{max(conf.values())*100:.1f}%</b>
-              </p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            if show_confidence:
-                st.plotly_chart(prob_chart(conf), use_container_width=True)
+<div class="result-card">
+  <h3>Sentiment Result</h3>
+  <span class="{tag_class(label)}">{label}</span>
+  <p class="conf-note">Confidence: <b>{max(conf.values())*100:.1f}%</b>
+     &nbsp;·&nbsp; Model: <b>{model_kind}</b>
+     &nbsp;·&nbsp; Characters: <b>{len(user_text)}</b></p>
+</div>""", unsafe_allow_html=True)
+            if show_conf:
+                st.plotly_chart(chart_confidence(conf), use_container_width=True)
+            if show_aspect:
+                aspects = aspect_sentiment(user_text, model_pack)
+                if aspects:
+                    rows = "".join(
+                        f"""<div class="aspect-row">
+                              <span class="aspect-kw">🔹 {a['Aspect']}</span>
+                              <span class="asp-{a['Sentiment'].lower()}">{a['Sentiment']}</span>
+                              <span class="asp-conf">{a['Confidence']}% confidence</span>
+                            </div>"""
+                        for a in aspects
+                    )
+                    st.markdown(f"""
+<div class="aspect-wrap">
+  <h3>🎯 Aspect-Based Sentiment Analysis</h3>
+  {rows}
+</div>""", unsafe_allow_html=True)
+                else:
+                    st.caption("ℹ️ No product/service aspects detected in this text.")
         else:
-            st.warning("Please enter some text first.")
+            st.warning("Please enter some text to analyze.")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Tweet Batch Analyzer
-# ═══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — SOCIAL MEDIA ANALYZER
+# ══════════════════════════════════════════════════════════════════════════════
 with tab2:
-    st.subheader("Batch Tweet Sentiment Analyzer")
-    st.caption("Paste one tweet per line — up to 200 tweets at once.")
+    st.subheader("🐦 Social Media Analyzer")
+    st.caption("Paste up to 200 tweets or social posts — one per line. See distribution, word cloud, and download a report.")
+
+    c1,c2 = st.columns([1,3])
+    if c1.button("📥 Load Sample Tweets", use_container_width=True):
+        st.session_state["tweet_input_text"] = "\n".join(SAMPLE_TWEETS)
+    if c2.button("🗑️ Clear", use_container_width=True):
+        st.session_state["tweet_input_text"] = ""
 
     tweet_input = st.text_area(
-        "Paste tweets (one per line):",
-        height=200,
-        placeholder=(
-            "I love the new iPhone update!\n"
-            "Tesla's Autopilot is getting worse, not better.\n"
-            "Just tried the new coffee shop downtown, pretty decent.\n"
-            "This new policy is absolutely ridiculous.\n"
-            "Had an okay day. Nothing special."
-        ),
+        "Paste posts here — one per line:", height=200,
+        key="tweet_input_text",
+        placeholder="I love the new iPhone update!\nTesla's quality has gone downhill.\nHad an okay day — nothing special.",
     )
 
-    if st.button("🐦 Analyze Tweets", type="primary", use_container_width=True):
-        tweets = [t.strip() for t in tweet_input.strip().splitlines() if t.strip()]
+    if st.button("🐦 Analyze All Posts", type="primary", use_container_width=True):
+        tweets = [t.strip() for t in (tweet_input or "").strip().splitlines() if t.strip()]
         if tweets:
-            results = []
-            bar = st.progress(0, text="Analyzing tweets…")
-            for i, tweet in enumerate(tweets):
-                label, conf = predict(tweet, model_pack)
-                results.append({
-                    "Tweet": tweet,
-                    "Sentiment": label,
-                    "Confidence": f"{max(conf.values())*100:.1f}%",
-                    "Positive %": f"{conf.get('Positive',0)*100:.1f}",
-                    "Negative %": f"{conf.get('Negative',0)*100:.1f}",
-                    "Neutral %":  f"{conf.get('Neutral',0)*100:.1f}",
-                })
-                bar.progress((i+1)/len(tweets), text=f"Analyzed {i+1}/{len(tweets)}")
-            bar.empty()
-
-            df = pd.DataFrame(results)
-            st.success(f"✅ Analyzed **{len(df)}** tweets")
-
-            # Summary metrics
-            m1, m2, m3, m4 = st.columns(4)
-            pos_pct = (df["Sentiment"]=="Positive").mean()*100
-            neg_pct = (df["Sentiment"]=="Negative").mean()*100
-            neu_pct = (df["Sentiment"]=="Neutral").mean()*100
-            m1.metric("Total Tweets", len(df))
-            m2.metric("😊 Positive",  f"{pos_pct:.0f}%")
-            m3.metric("😠 Negative",  f"{neg_pct:.0f}%")
-            m4.metric("😐 Neutral",   f"{neu_pct:.0f}%")
-
-            # Distribution pie
-            st.plotly_chart(dist_chart(df), use_container_width=True)
-
-            # Data table
-            st.dataframe(df, use_container_width=True, hide_index=True)
-
-            # Word cloud
-            if show_wordcloud:
-                with st.spinner("Generating word cloud…"):
-                    fig = make_wordcloud(df["Tweet"])
-                    if fig: st.pyplot(fig)
-
-            # Download
-            csv_bytes = df.to_csv(index=False).encode()
-            st.download_button("⬇️ Download Results CSV", csv_bytes,
-                               "tweet_sentiment.csv", "text/csv",
-                               use_container_width=True)
+            with st.spinner(f"Analyzing {len(tweets)} posts…"):
+                labels,confs = run_batch(tweets,model_pack)
+            st.session_state["tweet_df"] = pd.DataFrame(
+                {"Tweet":tweets,"Sentiment":labels,"Confidence (%)":confs})
         else:
-            st.warning("Please paste at least one tweet.")
+            st.warning("Please paste at least one post.")
+
+    if st.session_state["tweet_df"] is not None:
+        df = st.session_state["tweet_df"]
+        st.success(f"✅ Analyzed **{len(df)}** posts")
+        show_metrics(df, ncols=5)
+        st.markdown("")
+
+        if show_pie and show_bar:
+            cl,cr = st.columns(2)
+            with cl: st.plotly_chart(chart_pie(df), use_container_width=True)
+            with cr: st.plotly_chart(chart_bar(df), use_container_width=True)
+        elif show_pie: st.plotly_chart(chart_pie(df), use_container_width=True)
+        elif show_bar: st.plotly_chart(chart_bar(df), use_container_width=True)
+
+        if show_wordcloud:
+            with st.spinner("Generating word cloud…"):
+                wc_fig = make_wordcloud(df["Tweet"])
+                if wc_fig:
+                    st.markdown("**☁️ Word Cloud**")
+                    st.pyplot(wc_fig, use_container_width=True)
+
+        st.markdown("##### 📋 Results Table")
+        filt = st.multiselect("Filter:", ["Positive","Negative","Neutral"],
+                              default=["Positive","Negative","Neutral"], key="twt_filt")
+        st.dataframe(df[df["Sentiment"].isin(filt)], use_container_width=True, hide_index=True)
+        # ✅ IMPROVEMENT 4 — DOWNLOAD REPORT
+        _report_download(df, "Social Media Posts", "sentiment_report_social.csv")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — CSV Analyzer
-# ═══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — DATASET ANALYZER
+# ══════════════════════════════════════════════════════════════════════════════
 with tab3:
-    st.subheader("CSV Dataset Analyzer")
-    st.caption("Upload a CSV with a text column. The app will analyze sentiment for every row.")
+    st.subheader("📂 Dataset Analyzer")
+    st.caption("Upload any CSV with a text column. The AI classifies every row and returns an enriched dataset.")
 
-    uploaded = st.file_uploader("Upload CSV file", type=["csv"])
+    with st.expander("📌 Expected CSV format", expanded=False):
+        st.markdown("""
+**Minimum requirement:** one column with text.
+
+| review_text | category | rating |
+|---|---|---|
+| Great product, fast delivery! | Electronics | 5 |
+| Stopped working after 2 days. | Electronics | 1 |
+| Decent, nothing special. | Apparel | 3 |
+
+The app adds `Sentiment` and `Confidence (%)` columns automatically.
+""")
+
+    uploaded = st.file_uploader("Upload your CSV", type=["csv"])
 
     if uploaded:
         raw_df = pd.read_csv(uploaded)
-        st.info(f"Loaded **{len(raw_df)}** rows, **{len(raw_df.columns)}** columns")
+        st.info(f"✅ Loaded **{len(raw_df)} rows** × **{len(raw_df.columns)} columns**")
         st.dataframe(raw_df.head(5), use_container_width=True)
-
         text_col = st.selectbox("Select the text column:", raw_df.columns.tolist())
-        max_rows = st.slider("Max rows to analyze:", 10, min(500, len(raw_df)), min(100, len(raw_df)))
-
+        max_rows = st.slider("Max rows to analyze:",
+                             10, min(500,len(raw_df)), min(100,len(raw_df)))
         if st.button("📊 Run Analysis", type="primary", use_container_width=True):
             subset = raw_df[[text_col]].dropna().head(max_rows).copy()
             subset.columns = ["Text"]
-
-            labels, confs = [], []
-            bar = st.progress(0, text="Analyzing rows…")
-            for i, row in enumerate(subset["Text"]):
-                lbl, cf = predict(str(row), model_pack)
-                labels.append(lbl)
-                confs.append(max(cf.values()))
-                if i % 10 == 0:
-                    bar.progress((i+1)/len(subset), text=f"{i+1}/{len(subset)}")
-            bar.progress(1.0, text="Done!")
-            bar.empty()
-
-            subset["Sentiment"] = labels
-            subset["Confidence"] = [f"{c*100:.1f}%" for c in confs]
+            with st.spinner(f"Classifying {len(subset)} rows…"):
+                labels,confs = run_batch(subset["Text"].tolist(),model_pack)
+            subset["Sentiment"]     = labels
+            subset["Confidence (%)"]= confs
             st.session_state["csv_results"] = subset
-            st.success(f"✅ Analyzed {len(subset)} rows")
-
-        if "csv_results" in st.session_state:
-            df = st.session_state["csv_results"]
-
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Rows Analyzed", len(df))
-            m2.metric("😊 Positive", f"{(df['Sentiment']=='Positive').mean()*100:.0f}%")
-            m3.metric("😠 Negative", f"{(df['Sentiment']=='Negative').mean()*100:.0f}%")
-            m4.metric("😐 Neutral",  f"{(df['Sentiment']=='Neutral').mean()*100:.0f}%")
-
-            col_l, col_r = st.columns(2)
-            with col_l:
-                st.plotly_chart(dist_chart(df), use_container_width=True)
-            with col_r:
-                if show_wordfreq:
-                    fig = word_freq_chart(df["Text"])
-                    if fig: st.plotly_chart(fig, use_container_width=True)
-
-            if show_timeline:
-                st.plotly_chart(timeline_chart(df), use_container_width=True)
-
-            if show_wordcloud:
-                with st.spinner("Generating word cloud…"):
-                    wc_fig = make_wordcloud(df["Text"])
-                    if wc_fig: st.pyplot(wc_fig)
-
-            st.dataframe(df, use_container_width=True, hide_index=True)
-
-            csv_out = df.to_csv(index=False).encode()
-            st.download_button("⬇️ Download Full Results", csv_out,
-                               "sentiment_analysis.csv", "text/csv",
-                               use_container_width=True)
+            st.success(f"✅ Done — {len(subset)} rows classified.")
     else:
-        # Demo with sample data
         st.markdown("---")
-        if st.button("▶️ Run Demo with Sample Data", use_container_width=True):
-            sample_texts = [
-                "Absolutely loved the new update!", "Terrible customer support.",
-                "Product is decent, nothing special.", "Best app I've ever used.",
-                "Keeps crashing on my phone.", "Pretty good overall experience.",
-                "The battery life is amazing.", "Disappointed with the quality.",
-                "Works exactly as described.", "Not worth the price at all.",
-                "Shipping was super fast!", "Product broke after 2 days.",
-                "Great value for the money.", "Interface is confusing.",
-                "Highly recommend to everyone.", "Very slow and laggy.",
-            ]
-            demo_df = pd.DataFrame({"Text": sample_texts})
-            labels, confs = [], []
-            for t in sample_texts:
-                lbl, cf = predict(t, model_pack)
-                labels.append(lbl)
-                confs.append(max(cf.values()))
-            demo_df["Sentiment"] = labels
-            demo_df["Confidence"] = [f"{c*100:.1f}%" for c in confs]
-            st.session_state["csv_results"] = demo_df
-            st.rerun()
+        st.markdown("##### No file? Run the built-in demo (20 product reviews)")
+        if st.button("▶️ Load Sample Reviews + Run Demo", use_container_width=True):
+            texts,cats = zip(*SAMPLE_REVIEWS)
+            with st.spinner("Running demo…"):
+                labels,confs = run_batch(list(texts),model_pack)
+            st.session_state["csv_results"] = pd.DataFrame(
+                {"Text":list(texts),"Category":list(cats),"Sentiment":labels,"Confidence (%)":confs})
+            st.success("✅ Demo loaded!")
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — Analytics Dashboard
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab4:
-    st.subheader("📈 Analytics Dashboard")
-
-    if "csv_results" not in st.session_state:
-        st.info("💡 Run a CSV analysis first (Tab 3) or the demo, then come back here for the full dashboard.")
-    else:
+    if st.session_state["csv_results"] is not None:
         df = st.session_state["csv_results"]
+        st.markdown("---")
+        show_metrics(df, ncols=5)
+        st.markdown("")
 
-        st.markdown("### Overview Metrics")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Total Texts", len(df))
-        m2.metric("😊 Positive", f"{(df['Sentiment']=='Positive').sum()}")
-        m3.metric("😠 Negative", f"{(df['Sentiment']=='Negative').sum()}")
-        m4.metric("😐 Neutral",  f"{(df['Sentiment']=='Neutral').sum()}")
-        avg_conf = df["Confidence"].str.replace("%","").astype(float).mean()
-        m5.metric("Avg Confidence", f"{avg_conf:.1f}%")
+        cl,cr = st.columns(2)
+        with cl:
+            if show_pie: st.plotly_chart(chart_pie(df), use_container_width=True)
+        with cr:
+            if show_bar: st.plotly_chart(chart_bar(df), use_container_width=True)
 
-        st.markdown("### Sentiment Distribution")
-        st.plotly_chart(dist_chart(df), use_container_width=True)
-
-        st.markdown("### Sentiment Timeline")
         if show_timeline:
-            st.plotly_chart(timeline_chart(df), use_container_width=True)
-
-        col_l, col_r = st.columns(2)
-        with col_l:
-            st.markdown("### Word Frequency")
-            if show_wordfreq:
-                fig = word_freq_chart(df["Text"])
-                if fig: st.plotly_chart(fig, use_container_width=True)
-        with col_r:
-            st.markdown("### Word Cloud")
-            if show_wordcloud:
-                wc_fig = make_wordcloud(df["Text"])
-                if wc_fig: st.pyplot(wc_fig)
-
-        st.markdown("### Full Data Table")
-        sentiment_filter = st.multiselect("Filter by sentiment:",
-                                          ["Positive", "Negative", "Neutral"],
-                                          default=["Positive", "Negative", "Neutral"])
-        filtered = df[df["Sentiment"].isin(sentiment_filter)]
-        st.dataframe(filtered, use_container_width=True, hide_index=True)
-        st.download_button("⬇️ Download Filtered Results",
-                           filtered.to_csv(index=False).encode(),
-                           "filtered_results.csv", "text/csv",
-                           use_container_width=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — Topic / Live Monitor
-# ═══════════════════════════════════════════════════════════════════════════════
-with tab5:
-    st.subheader("🌐 Real-Time Topic Sentiment Monitor")
-    st.caption(
-        "Enter a topic or brand name. The app generates a simulated live "
-        "sentiment feed — useful to prototype a real social-media monitoring tool."
-    )
-
-    topic = st.text_input("Enter a topic / brand:", placeholder="Tesla, iPhone, Python…")
-
-    templates = {
-        "positive": [
-            "{t} is amazing, I love it!", "Best thing I've used: {t}",
-            "So impressed with {t} today!", "{t} never disappoints 🔥",
-            "Can't imagine life without {t}", "Huge fan of {t} ❤️",
-        ],
-        "negative": [
-            "{t} is really frustrating me today.", "Disappointed with {t} again.",
-            "{t} keeps failing. Not happy.", "Why is {t} so bad lately?",
-            "Worst experience with {t}.", "Totally let down by {t}.",
-        ],
-        "neutral": [
-            "Just tried {t} for the first time.", "Heard a lot about {t} recently.",
-            "Not sure what to think of {t}.", "{t} seems okay I guess.",
-            "Using {t} for my project.", "Interesting to see how {t} evolves.",
-        ],
-    }
-
-    n_tweets = st.slider("Number of simulated posts:", 20, 200, 50, step=10)
-
-    if st.button("🔴 Start Monitor", type="primary", use_container_width=True) and topic:
-        sentiments = random.choices(
-            ["positive", "negative", "neutral"],
-            weights=[0.50, 0.30, 0.20],
-            k=n_tweets,
-        )
-        posts = []
-        for s in sentiments:
-            text = random.choice(templates[s]).format(t=topic)
-            posts.append(text)
-
-        sim_df = pd.DataFrame({"Text": posts})
-        labels, confs = [], []
-        bar = st.progress(0)
-        for i, t in enumerate(posts):
-            lbl, cf = predict(t, model_pack)
-            labels.append(lbl)
-            confs.append(max(cf.values()))
-            bar.progress((i+1)/len(posts))
-        bar.empty()
-
-        sim_df["Sentiment"] = labels
-        sim_df["Confidence"] = [f"{c*100:.1f}%" for c in confs]
-        sim_df["time"] = pd.date_range(end=pd.Timestamp.now(), periods=len(sim_df), freq="5min")
-
-        pos_pct = (sim_df["Sentiment"]=="Positive").mean()*100
-        neg_pct = (sim_df["Sentiment"]=="Negative").mean()*100
-        neu_pct = (sim_df["Sentiment"]=="Neutral").mean()*100
-
-        overall = "🟢 Mostly Positive" if pos_pct > 50 else ("🔴 Mostly Negative" if neg_pct > 40 else "🟡 Mixed")
-
-        st.markdown(f"""
-        <div style="background:#1a1a2e;border-radius:12px;padding:1.5rem;border:1px solid #2d3748;margin-bottom:1rem;">
-          <h3 style="color:#e2e8f0;margin:0 0 0.5rem 0;">📊 Topic: <span style="color:#e94560;">{topic}</span></h3>
-          <p style="color:#a0aec0;font-size:1.1rem;margin:0">Overall Sentiment: <b style="color:#e2e8f0">{overall}</b></p>
-          <p style="color:#718096;font-size:0.9rem;margin-top:0.4rem">
-            Posts analyzed: {n_tweets} &nbsp;|&nbsp;
-            😊 {pos_pct:.0f}% &nbsp;|&nbsp;
-            😠 {neg_pct:.0f}% &nbsp;|&nbsp;
-            😐 {neu_pct:.0f}%
-          </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col_l, col_r = st.columns(2)
-        with col_l:
-            st.plotly_chart(dist_chart(sim_df), use_container_width=True)
-        with col_r:
-            st.plotly_chart(timeline_chart(sim_df), use_container_width=True)
-
+            st.plotly_chart(chart_timeline(df), use_container_width=True)
+        if show_wordfreq:
+            fig_wf = chart_wordfreq(df["Text"])
+            if fig_wf: st.plotly_chart(fig_wf, use_container_width=True)
         if show_wordcloud:
-            wc_fig = make_wordcloud(sim_df["Text"])
-            if wc_fig: st.pyplot(wc_fig)
+            with st.spinner("Generating word cloud…"):
+                wc_fig = make_wordcloud(df["Text"])
+                if wc_fig:
+                    st.markdown("**☁️ Word Cloud**")
+                    st.pyplot(wc_fig, use_container_width=True)
 
-        st.dataframe(sim_df[["Text","Sentiment","Confidence"]], use_container_width=True, hide_index=True)
+        st.markdown("##### 📋 Full Results")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        # ✅ IMPROVEMENT 4 — DOWNLOAD REPORT
+        _report_download(df, "CSV Dataset", "sentiment_report_dataset.csv")
 
-        st.download_button("⬇️ Download Monitor Results",
-                           sim_df.to_csv(index=False).encode(),
-                           f"{topic}_monitor.csv", "text/csv",
-                           use_container_width=True)
 
-    elif not topic and st.button("🔴 Start Monitor", key="mon2"):
-        st.warning("Please enter a topic name first.")
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — ANALYTICS DASHBOARD
+# ══════════════════════════════════════════════════════════════════════════════
+with tab4:
+    st.subheader("📊 Analytics Dashboard")
+    st.caption("Deep-dive visual analytics — charts, trends, keywords, word cloud, and filtered export.")
+
+    source = st.session_state["csv_results"] or st.session_state["tweet_df"]
+
+    if source is None:
+        st.markdown("""
+<div class="info-card">
+  <h4>💡 No data loaded</h4>
+  <p>Run an analysis in <b>Dataset Analyzer</b> or <b>Social Media Analyzer</b> first,
+     or use the <b>Quick Demo</b> buttons above the tabs.</p>
+</div>""", unsafe_allow_html=True)
+    else:
+        df = source.copy()
+
+        # ✅ BONUS — Metrics always above charts
+        show_metrics(df, ncols=5)
+        st.markdown("")
+
+        cl,cr = st.columns(2)
+        with cl:
+            if show_pie: st.plotly_chart(chart_pie(df), use_container_width=True)
+        with cr:
+            if show_bar: st.plotly_chart(chart_bar(df), use_container_width=True)
+
+        if show_timeline:
+            st.plotly_chart(chart_timeline(df), use_container_width=True)
+
+        text_col = "Text" if "Text" in df.columns else "Tweet"
+        cl2,cr2  = st.columns(2)
+        with cl2:
+            if show_wordfreq:
+                fig_wf = chart_wordfreq(df[text_col])
+                if fig_wf: st.plotly_chart(fig_wf, use_container_width=True)
+        with cr2:
+            if show_wordcloud:
+                wc_fig = make_wordcloud(df[text_col])
+                if wc_fig: st.pyplot(wc_fig, use_container_width=True)
+
+        st.markdown("##### 🔎 Filter & Export")
+        filt = st.multiselect("Filter by sentiment:",
+                              ["Positive","Negative","Neutral"],
+                              default=["Positive","Negative","Neutral"],
+                              key="analytics_filter")
+        filtered = df[df["Sentiment"].isin(filt)]
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        # ✅ IMPROVEMENT 4 — DOWNLOAD REPORT
+        _report_download(filtered, "Analytics Dashboard", "sentiment_report_analytics.csv")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — ABOUT THE PROJECT
+# ══════════════════════════════════════════════════════════════════════════════
+with tab5:
+    st.subheader("👨‍💻 About the Project")
+
+    st.markdown("### 🧠 AI Model Information")
+    if model_kind=="transformer":
+        st.markdown("""
+<div class="model-card">
+  <h4>🤗 DistilBERT Transformer — Currently Active</h4>
+  <div class="model-row"><span class="mk">Model</span><span class="mv">distilbert-base-uncased-finetuned-sst-2-english</span></div>
+  <div class="model-row"><span class="mk">Architecture</span><span class="mv">Transformer (BERT-family, 6 attention layers)</span></div>
+  <div class="model-row"><span class="mk">Training Dataset</span><span class="mv">Stanford Sentiment Treebank v2 (SST-2)</span></div>
+  <div class="model-row"><span class="mk">Benchmark Accuracy</span><span class="mv">~91% on SST-2</span></div>
+  <div class="model-row"><span class="mk">Speed vs BERT</span><span class="mv">60% faster · 40% fewer parameters · 97% performance retained</span></div>
+  <div class="model-row"><span class="mk">Task</span><span class="mv">Binary Sentiment Classification (Positive / Negative)</span></div>
+  <div class="model-row"><span class="mk">Max Token Limit</span><span class="mv">512 tokens (~400 words)</span></div>
+  <div class="model-row"><span class="mk">Source</span><span class="mv">HuggingFace Model Hub (open-source)</span></div>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("### 📄 CV / Resume Entry")
+    st.markdown("""
+<div class="cv-block">
+  <div class="cv-title">AI Sentiment Intelligence Dashboard &nbsp;|&nbsp; Live Demo ↗</div>
+  <br>
+  • Built a production-grade NLP sentiment analysis platform using Python and Machine Learning<br>
+  • Implemented DistilBERT transformer (HuggingFace) with scikit-learn Logistic Regression fallback<br>
+  • Developed a full-stack interactive web app using Streamlit with 4 analysis modes<br>
+  • Added aspect-based sentiment analysis — identifies sentiment per product/service dimension<br>
+  • Integrated visual analytics: pie/bar charts, sentiment timeline, word cloud, keyword frequency<br>
+  • Built downloadable sentiment reports with executive summary metrics (count, %, confidence)<br>
+  • Deployed publicly on HuggingFace Spaces — instantly accessible and testable by anyone<br>
+  <div class="cv-tech">Tech: Python · HuggingFace Transformers · Streamlit · Plotly · Scikit-learn · Pandas</div>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("### ✅ Skills Demonstrated")
+    ca,cb = st.columns(2)
+    with ca:
+        st.markdown("""
+**ML & NLP**
+- ✅ Pre-trained transformer (DistilBERT)
+- ✅ TF-IDF + Logistic Regression NLP
+- ✅ Aspect-based sentiment analysis
+- ✅ 3-tier model fallback logic
+- ✅ Batch inference pipeline
+
+**Data Engineering**
+- ✅ CSV ingestion with Pandas
+- ✅ Dynamic column detection
+- ✅ Multi-section report generation
+- ✅ Filtered CSV export
+""")
+    with cb:
+        st.markdown("""
+**Web App / Frontend**
+- ✅ Streamlit multi-tab dashboard
+- ✅ Custom CSS dark neon theme
+- ✅ Session state management
+- ✅ Interactive Plotly charts
+- ✅ Quick demo strip in hero
+
+**DevOps & Deployment**
+- ✅ Public deploy — HuggingFace Spaces
+- ✅ Zero-setup for recruiters (live URL)
+- ✅ requirements.txt reproducibility
+- ✅ Graceful model degradation
+""")
+
+    st.markdown("---")
+    st.markdown("### 👨‍💻 Author")
+    st.markdown("""
+**Ojas Waykole** — 2nd Year B.Tech CSE  
+Government College of Engineering, Jalgaon (NMU University) · Maharashtra, India
+
+🔗 [HuggingFace Space](https://huggingface.co/spaces/OjasWaykole/ai-sentiment-dashboard)  
+💼 Open to **AI/ML & NLP Internship Opportunities** · May–December
+""")
